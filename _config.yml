@@ -16,7 +16,7 @@ timezone: America/Los_Angeles
 
 title: Estella Liu # the main title
 
-tagline: Taking ML from 0 to 1 — and all the way into production # it will display as the subtitle
+tagline: From 0 to 1, to production # it will display as the subtitle
 
 description: >- # used by seo meta and the atom feed
   Engineering notes on LLM systems: inference, KV cache, batching, quantization and serving — plus notes from years in ads and recommendation.
