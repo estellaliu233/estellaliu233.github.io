@@ -6,23 +6,23 @@ order: 5
 
 <!-- TODO: everything below is a draft — rewrite in your own words. -->
 
-I work on making large-scale ML systems fast.
+I work on **LLM systems**: how models are served, where the time and the memory actually go, and
+what it takes to make inference fast enough to be worth running.
 
-My background is in search, recommendation and advertising — embedding, retrieval and ranking
-models that serve traffic under tight latency budgets. These days I spend most of my time on
-**LLM inference**: KV cache management, batching and scheduling, quantization, and everything
-else that decides whether a model is cheap or expensive to serve.
+Most of what I write here is hands-on — reading a scheduler, running a benchmark, taking apart a
+KV cache implementation — and most of it started as something I got wrong the first time.
 
-The two look like different worlds, but the hard parts rhyme. A 100 GB embedding table and a
-100 B parameter model run into the same wall: the data you need does not fit where you need it,
-and the bottleneck is memory, not compute. This site is where I write that down.
+Before this I spent my time in search, recommendation and advertising: embedding, retrieval and
+ranking models serving traffic under tight latency budgets. Those notes live in the
+[Ads & Reco](/adsreco/) tab. The two fields look unrelated, but the hard parts rhyme — a 100 GB
+embedding table and a 100 B parameter model hit the same wall, and it is a memory wall, not a
+compute one.
 
 ## What you'll find here
 
-- **[LLM Inference](/categories/llm-inference/)** — field notes: reading schedulers, running
-  benchmarks, and the things I got wrong on the way.
-- **[Ads & Reco](/adsreco/)** — paper notes from a systematic pass through the search /
-  recommendation / advertising literature, with runnable code for the core ideas.
+- **Home** — LLM systems: inference, KV cache, batching and scheduling, quantization, serving.
+- **[Ads & Reco](/adsreco/)** — mind maps and paper notes from a systematic pass through the
+  search / recommendation / advertising literature.
 
 ## Background
 
@@ -36,7 +36,7 @@ and the bottleneck is memory, not compute. This site is where I write that down.
 
 <!-- TODO: one line about what you're looking for, or delete this section. -->
 
-TODO: e.g. "Looking for ML systems / inference engineering roles."
+TODO: e.g. "Looking for LLM inference / ML systems engineering roles."
 
 ## Elsewhere
 

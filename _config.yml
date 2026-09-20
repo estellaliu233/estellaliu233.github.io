@@ -16,10 +16,10 @@ timezone: America/Los_Angeles
 
 title: Estella Liu # the main title
 
-tagline: Notes on large-scale ML systems — LLM inference, ads & recommendation # it will display as the subtitle
+tagline: Notes on LLM systems — inference, serving, and making them fast # it will display as the subtitle
 
 description: >- # used by seo meta and the atom feed
-  Engineering notes on making large-scale ML systems fast: LLM inference, ads ranking and recommendation.
+  Engineering notes on LLM systems: inference, KV cache, batching, quantization and serving — plus notes from years in ads and recommendation.
 
 # Fill in the protocol & hostname for your site.
 # E.g. 'https://username.github.io', note that it does not end with a '/'.
