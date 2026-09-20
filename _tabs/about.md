@@ -35,5 +35,6 @@ compute one.
 ## Elsewhere
 
 - GitHub: [@estellaliu233](https://github.com/estellaliu233)
-- LinkedIn: TODO
+- LinkedIn: [estellaxinyuan](https://www.linkedin.com/in/estellaxinyuan/)
+- Google Scholar: [publications](https://scholar.google.com/citations?user=mYGmeOgAAAAJ)
 - Email: TODO
