@@ -32,12 +32,6 @@ compute one.
 - TODO: earlier role or project
 - TODO: education
 
-## Currently
-
-<!-- TODO: one line about what you're looking for, or delete this section. -->
-
-TODO: e.g. "Looking for LLM inference / ML systems engineering roles."
-
 ## Elsewhere
 
 - GitHub: [@estellaliu233](https://github.com/estellaliu233)
