@@ -1,0 +1,30 @@
+---
+layout: default
+# Home feed: every post EXCEPT those filed under a category listed in `site.feed_tabs`,
+# which get their own tab (see _layouts/post-feed.html).
+---
+
+{% include lang.html %}
+
+{% assign feed = '' | split: '' %}
+
+{% for post in site.posts %}
+  {% assign skip = false %}
+  {% if post.hidden %}
+    {% assign skip = true %}
+  {% endif %}
+  {% for owned in site.feed_tabs %}
+    {% if post.categories contains owned %}
+      {% assign skip = true %}
+    {% endif %}
+  {% endfor %}
+  {% unless skip %}
+    {% assign feed = feed | push: post %}
+  {% endunless %}
+{% endfor %}
+
+{% assign pinned = feed | where: 'pin', true %}
+{% assign normal = feed | where_exp: 'item', 'item.pin != true' %}
+{% assign posts = pinned | concat: normal %}
+
+{% include post-cards.html posts=posts lang=lang %}

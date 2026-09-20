@@ -1,0 +1,18 @@
+---
+layout: page
+# A tab that behaves like the home page but lists only one category.
+# Set `feed_category` in the tab's front matter.
+---
+
+{% include lang.html %}
+
+{% assign feed = site.categories[page.feed_category] %}
+{% assign pinned = feed | where: 'pin', true %}
+{% assign normal = feed | where_exp: 'item', 'item.pin != true' %}
+{% assign posts = pinned | concat: normal %}
+
+{{ content }}
+
+{% if posts.size > 0 %}
+  {% include post-cards.html posts=posts lang=lang %}
+{% endif %}
