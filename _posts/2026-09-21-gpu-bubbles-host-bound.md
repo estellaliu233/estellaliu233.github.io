@@ -31,7 +31,20 @@ find the point where throughput stops increasing.
   | Compute | `TENSO` (1004, tensor pipe active) |
   | Memory bandwidth | `DRAMA` (1005, DRAM active) |
   | Interconnect | NVLink TX/RX (1011, 1012) |
-  | Capacity | ⚠️ **Not visible in DCGM.** The KV cache pool is preallocated at startup, so memory usage is flat. Use the engine's own [metrics](https://docs.vllm.ai/en/latest/design/metrics/): `vllm:kv_cache_usage_perc` and `vllm:num_preemptions_total` |
+  | Capacity | ⚠️ **Not visible in DCGM** — see below |
+
+- **Capacity has to come from the engine.** The KV cache pool is preallocated at startup, so GPU memory
+  usage looks flat and full whether the pool is empty or exhausted. Both engines expose the same two
+  signals under different names:
+
+  | Signal | vLLM ([metrics](https://docs.vllm.ai/en/latest/design/metrics/)) | SGLang ([metrics](https://docs.sglang.io/docs/references/production_metrics), needs `--enable-metrics`) |
+  |---|---|---|
+  | KV pool occupancy | `vllm:kv_cache_usage_perc` (0–1) | `sglang:token_usage` (0–1) |
+  | Requests evicted for lack of KV space | `vllm:num_preemptions_total` | `sglang:num_retracted_requests_total` (SGLang calls preemption *retraction*) |
+  | Running vs. waiting requests | `vllm:num_requests_running` / `vllm:num_requests_waiting` | `sglang:num_running_reqs` / `sglang:num_queue_reqs` |
+
+  Occupancy near 1.0 with a rising preemption or retraction counter means capacity is the bottleneck,
+  not the host. The running/waiting pair is also the first check for insufficient load (Step 3, case 4).
 
 - All four low, with low GRACT → the bottleneck is off-device: **host-bound**.
 
@@ -65,6 +78,9 @@ GPU       |██|██|██|██|██|██| |                         
 - **Launch-bound** → which region is kernel-dense, and can it be captured in a CUDA Graph?
 - **Synchronization point** → which line triggers it? Use the PyTorch profiler to map ATen ops back to Python
   source lines. This is the only branch that needs it.
+  - vLLM: launch with `--profiler-config '{"profiler": "torch", "torch_profiler_dir": "..."}'` (v0.13+), then
+    call `/start_profile` and `/stop_profile` ([docs](https://docs.vllm.ai/en/latest/contributing/profiling/))
+  - SGLang: set `SGLANG_TORCH_PROFILER_DIR`, then call `/start_profile` and `/stop_profile`
 - **Host overhead** → which Python code path dominates?
 - **Insufficient load** → skip this step.
 
@@ -104,14 +120,17 @@ The absolute cost is unchanged; the denominator collapsed.
 
 ### A. Engine-side optimizations
 
-| Year | Technique | Mechanism | Reported gain |
+| Technique | Mechanism | vLLM | SGLang |
 |---|---|---|---|
-| 2023 | CUDA Graphs | Hundreds of `cudaLaunchKernel` calls replaced by one `cudaGraphLaunch` | [llama.cpp](https://developer.nvidia.com/blog/optimizing-llama-cpp-ai-inference-with-cuda-graphs/) (batch 1) 1.2×; [Qwen2.5-0.5B on vLLM](https://www.linkedin.com/pulse/efficiently-serving-llms-part-4-how-cuda-graphs-make-vllm-thomas-4ofuc) +13% throughput, −17.3% ITL (combined with async scheduling) |
-| 2024 | Overlap scheduling | The host prepares batch N+1 while the GPU runs batch N | [SGLang zero-overhead scheduler](https://www.lmsys.org/blog/2024-12-04-sglang-v0-4/) 1.1× ("most significant for small models and large TP"); [vLLM multi-step scheduling](https://blog.vllm.ai/2024/09/05/perf-update.html) +28% |
-| 2024 | Asynchronous output processing | Detokenization and response assembly overlap with the next forward pass | [vLLM v0.6.0](https://blog.vllm.ai/2024/09/05/perf-update.html) −8.7% TPOT |
-| 2024 | Reduced Python overhead | Object pooling | [vLLM v0.6.0](https://blog.vllm.ai/2024/09/05/perf-update.html) +24% |
-| 2025 | Process isolation | Tokenization, detokenization and HTTP moved out of the engine loop | [vLLM V1 `EngineCore`](https://vllm.ai/blog/2025-01-27-v1-alpha-release) 1.7× (motivation: an 8B decode step down to ~5 ms) |
-| 2026 | Input preparation on the GPU | Triton kernels for input preparation, targeting zero CPU–GPU synchronization | [vLLM Model Runner V2](https://vllm.ai/blog/2026-03-24-mrv2): Qwen3-0.6B on GB200 +56% |
+| CUDA Graphs | Hundreds of `cudaLaunchKernel` calls replaced by one `cudaGraphLaunch` | On by default; piecewise and full modes. [Qwen2.5-0.5B](https://www.linkedin.com/pulse/efficiently-serving-llms-part-4-how-cuda-graphs-make-vllm-thomas-4ofuc): +13% throughput, −17.3% ITL (combined with async scheduling) | On by default for decode, captured per batch size |
+| Overlap scheduling | The host prepares batch N+1 while the GPU runs batch N | [Multi-step scheduling](https://blog.vllm.ai/2024/09/05/perf-update.html) +28% (2024), later replaced by async scheduling | [Zero-overhead batch scheduler](https://www.lmsys.org/blog/2024-12-04-sglang-v0-4/) 1.1× (2024), "most significant for small models and large TP" |
+| Asynchronous output processing | Detokenization and response assembly overlap with the next forward pass | [v0.6.0](https://blog.vllm.ai/2024/09/05/perf-update.html): −8.7% TPOT | Covered by process isolation (next row) |
+| Process isolation | Tokenization, detokenization and HTTP moved out of the engine loop | [V1 `EngineCore`](https://vllm.ai/blog/2025-01-27-v1-alpha-release) 1.7× (2025; motivation: an 8B decode step down to ~5 ms) | Built in: tokenizer, scheduler and [detokenizer](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/managers/detokenizer_manager.py) run as separate processes |
+| Reduced Python overhead | Object pooling | [v0.6.0](https://blog.vllm.ai/2024/09/05/perf-update.html): +24% | — |
+| Input preparation on the GPU | Triton kernels for input preparation, targeting zero CPU–GPU synchronization | [Model Runner V2](https://vllm.ai/blog/2026-03-24-mrv2) (2026): Qwen3-0.6B on GB200 +56% | — |
+
+Outside these two engines, [llama.cpp](https://developer.nvidia.com/blog/optimizing-llama-cpp-ai-inference-with-cuda-graphs/)
+reported 1.2× from CUDA Graphs at batch size 1.
 
 ### B. Without modifying the engine
 
@@ -122,14 +141,18 @@ versions; see [engine arguments](https://docs.vllm.ai/en/stable/configuration/en
 **1. Verify that CUDA Graphs cover your traffic.** This is the most common silent failure. Graphs are
 captured per batch-size bucket, and a batch outside the captured sizes falls back to eager entirely.
 
-- Does the real batch-size distribution fall inside the captured sizes? (SGLang `--cuda-graph-max-bs`;
-  vLLM `--cudagraph-capture-sizes` and the startup log)
-- Is it running full or piecewise graphs? Full graphs require attention-backend support and fall back
-  silently when it is missing.
-- vLLM `--enforce-eager` disables CUDA Graphs completely.
+| Check | vLLM | SGLang |
+|---|---|---|
+| Captured batch sizes vs. real batch sizes | `--cudagraph-capture-sizes`; the captured sizes are in the startup log | `--cuda-graph-max-bs` (`--cuda-graph-max-bs-decode` / `-prefill` in recent versions); also in the startup log |
+| Graphs switched off entirely | `--enforce-eager` | `--disable-cuda-graph` |
+| Graph mode | Full graphs need attention-backend support and fall back to piecewise silently | — |
 
-**2. Increase batch size.** The most direct way to lengthen the GPU side of each step. Speculative
-decoding also raises tokens per step (`T = B × (k+1)`) without adding sequences.
+My [#756](https://github.com/sgl-project/sglang-omni/pull/756) case in Section 4 is exactly this check on SGLang: a default of 16 capped both admission and the captured batch sizes.
+
+**2. Increase batch size.** The most direct way to lengthen the GPU side of each step: vLLM
+`--max-num-seqs` / `--max-num-batched-tokens`, SGLang `--max-running-requests`. Keep the CUDA Graph
+capture range in step with it (item 1). Speculative decoding also raises tokens per step (`T = B × (k+1)`)
+without adding sequences.
 
 **3. Upgrade the engine.** Each generation above removes a different source of bubbles; running a few
 versions behind means missing entire layers of optimization.
@@ -139,7 +162,9 @@ kernel launches is unchanged, and NCCL calls are added. This requires the model 
 at the cost of higher single-request latency and N copies of the weights.
 
 **5. Cut per-step and per-request host work.** Avoid streaming where it is not needed; use structured
-output sparingly. ⚠️ Since vLLM V1's process isolation, the gains here are much smaller.
+output sparingly. ⚠️ Both engines already run detokenization and HTTP outside the engine loop (vLLM V1's
+`EngineCore`, SGLang's separate tokenizer and detokenizer processes), so the gains here are much smaller than
+they used to be.
 
 ## 4. Cases from sglang-omni
 
@@ -228,7 +253,8 @@ the model. Fixed in [#1304](https://github.com/sgl-project/sglang-omni/pull/1304
 
 **Engines and tooling**
 - NVIDIA, [DCGM Feature Overview — profiling metrics](https://docs.nvidia.com/datacenter/dcgm/latest/user-guide/feature-overview.html)
-- vLLM, [Metrics](https://docs.vllm.ai/en/latest/design/metrics/) and [Engine Arguments](https://docs.vllm.ai/en/stable/configuration/engine_args/)
+- vLLM, [Metrics](https://docs.vllm.ai/en/latest/design/metrics/), [Engine Arguments](https://docs.vllm.ai/en/stable/configuration/engine_args/) and [Profiling](https://docs.vllm.ai/en/latest/contributing/profiling/)
+- SGLang, [Production Metrics](https://docs.sglang.io/docs/references/production_metrics)
 - vLLM, [vLLM v0.6.0: 2.7x Throughput Improvement and 5x Latency Reduction](https://blog.vllm.ai/2024/09/05/perf-update.html) (2024)
 - vLLM, [vLLM V1: A Major Upgrade to vLLM's Core Architecture](https://vllm.ai/blog/2025-01-27-v1-alpha-release) (2025)
 - vLLM, [Model Runner V2](https://vllm.ai/blog/2026-03-24-mrv2) (2026)
