@@ -188,6 +188,10 @@ the fix measured.
 | Step 4 | The backbone is captured, but the per-step sampling and feedback chain runs eagerly outside the graph, with `any()`, `.item()` and `nonzero()` on the hot path                                                                                                                                                                   |
 | Step 5 | Remove the data-dependent synchronizations first (small in time, but they block capture), then capture the sampling chain per batch bucket and sampling signature                                                                                                                                                                |
 
+Note: #1232 stops short of a positive host-bound classification — 34.13% of the idle interval remained
+unattributed. "Not GPU-bound" is what the counters support; "host-bound" is the next hypothesis, not yet
+the conclusion.
+
 ### (1) Launch-bound: the Qwen3-TTS code predictor ([#1134](https://github.com/sgl-project/sglang-omni/pull/1134))
 
 - **Symptom:** 67.7% of the serving loop spent in `_collect_codes`; throughput *decreased* with
