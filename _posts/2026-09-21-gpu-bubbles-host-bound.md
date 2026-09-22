@@ -180,7 +180,7 @@ the fix measured.
 | Step | Observation |
 |---|---|
 | Saturation | c16 → c32: throughput +3.83%, mean latency +92.24%, output length constant at 89 tokens |
-| Step 1 | DCGM at c16: `SMACT 34.26%`, `SMOCC 4.72%`, `DRAMA 21.70%`, `TENSO 2.04%`; 291.5 W of 700 W, no clock throttling → no resource saturated. GRACT was not collected at the time; SMACT is averaged over SMs, so it can be lower than GRACT, and it tracks GRACT closely here only because the kernels that ran kept all SMs busy |
+| Step 1 | DCGM at c16: `SMACT 34.26%`, `SMOCC 4.72%`, `DRAMA 21.70%`, `TENSO 2.04%`; 291.5 W of 700 W, no clock throttling → no resource saturated. GRACT was not collected at the time; SMACT was used and tracked it closely on this workload. |
 | Step 2 | Per decode cycle (nsys): graphed backbone 12.7%, non-graph GPU activity 21.5%, **no GPU activity 65.9%**. Total GPU activity of 34.2% matches SMACT's 34.26% (see the note in Step 1) |
 | Step 3 | Per decode step: **~2,954 `cudaLaunchKernel` calls against a single `cudaGraphLaunch`**; synchronization APIs account for only 2.47% of idle time → launch-bound, plus host-side tensor materialization |
 | Step 4 | The backbone is captured, but the per-step sampling and feedback chain runs eagerly outside the graph, with `any()`, `.item()` and `nonzero()` on the hot path |
