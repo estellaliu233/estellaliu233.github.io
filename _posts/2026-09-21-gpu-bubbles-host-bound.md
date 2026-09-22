@@ -33,7 +33,8 @@ find the point where throughput stops increasing.
   | Interconnect | NVLink TX/RX (1011, 1012) |
   | Capacity | ⚠️ **Not visible in DCGM.** The KV cache pool is preallocated at startup, so memory usage is flat. Use the engine's own [metrics](https://docs.vllm.ai/en/latest/design/metrics/): `vllm:kv_cache_usage_perc` and `vllm:num_preemptions_total` |
 
-- All four low, with low GRACT → the bottleneck is off-device: **host-bound**.
+- All four low, with low GRACT → the bottleneck is **off-device**. Step 3 decides whether that
+  means the host cannot keep up, or there is simply no load reaching the engine.
 
 ### Step 2 — Quantify the bubbles on an Nsight Systems timeline
 
@@ -65,8 +66,9 @@ GPU       |██|██|██|██|██|██| |                         
 - **Launch-bound** → which region is kernel-dense, and can it be captured in a CUDA Graph?
 - **Synchronization point** → which line triggers it? Use the PyTorch profiler to map ATen ops back to Python
   source lines. This is where it's indispensable.
-  - vLLM: launch with `--profiler-config '{"profiler": "torch", "torch_profiler_dir": "..."}'` (v0.13+), then
-    call `/start_profile` and `/stop_profile` ([docs](https://docs.vllm.ai/en/latest/contributing/profiling/))
+  - vLLM: enable the torch profiler as described in the
+    [profiling docs](https://docs.vllm.ai/en/latest/contributing/profiling/), then call
+    `/start_profile` and `/stop_profile`
   - SGLang: set `SGLANG_TORCH_PROFILER_DIR`, then call `/start_profile` and `/stop_profile`
 - **Host overhead** → which Python code path dominates?
 - **Insufficient load** → skip this step.
@@ -122,7 +124,7 @@ host cost per request = C_request + C_step × steps / batch
 |---|---|---|
 | Dominant term | `C_step`: a few steps, each light on the GPU | `C_request`: requests arrive faster than the host can process them |
 | Does a larger batch help? | Yes, if per-step host work is fixed rather than per request — short requests finish together with no long tail, which is ideal for batching | Barely — batching amortizes only per-step cost, and there are hardly any steps |
-| What helps | Larger batches, CUDA Graphs | Take request handling off the engine loop (process isolation), then parallelize it (more API server processes, e.g. vLLM `--api-server-count`, or more replicas) |
+| What helps | Larger batches, CUDA Graphs | Take request handling off the engine loop (process isolation), then parallelize it (more API server processes, or more replicas) |
 | Typical workloads | Short generations, TTS utterances | Classification, moderation, reranking |
 
 ## 3. What engines already do, and what is left to the operator
@@ -170,21 +172,34 @@ they used to be.
 
 [sglang-omni](https://github.com/sgl-project/sglang-omni) serves multi-stage TTS and omni models, and it
 matches nearly every high-risk trait in Section 2: small models, short outputs, multiple stages and
-per-step host decisions. The cases below are public issues and PRs from the repository: first an
+per-step host decisions. The cases below are public issues and PRs from the repository —
+[#1232](https://github.com/sgl-project/sglang-omni/issues/1232),
+[#756](https://github.com/sgl-project/sglang-omni/pull/756) and
+[#1304](https://github.com/sgl-project/sglang-omni/pull/1304) are mine; the rest are teammates' fixes
+that I traced through the same six steps. First an
 investigation that walks through all six steps, then four PRs, each an example of one Step 3 outcome.
 Each case links to its source, where you can follow how the cause was found, how it was fixed and what
 the fix measured.
 
 ### A full pass: MOSS-TTS Delay ([#1232](https://github.com/sgl-project/sglang-omni/issues/1232))
 
-| Step | Observation |
-|---|---|
-| Saturation | c16 → c32: throughput +3.83%, mean latency +92.24%, output length constant at 89 tokens |
-| Step 1 | DCGM at c16: `SMACT 34.26%`, `SMOCC 4.72%`, `DRAMA 21.70%`, `TENSO 2.04%`; 291.5 W of 700 W, no clock throttling → no resource saturated. GRACT was not collected at the time; SMACT was used and tracked it closely on this workload. |
-| Step 2 | Per decode cycle (nsys): graphed backbone 12.7%, non-graph GPU activity 21.5%, **no GPU activity 65.9%**. Total GPU activity of 34.2% matches SMACT's 34.26% (see the note in Step 1) |
-| Step 3 | Per decode step: **~2,954 `cudaLaunchKernel` calls against a single `cudaGraphLaunch`**; synchronization APIs account for only 2.47% of idle time → launch-bound, plus host-side tensor materialization |
-| Step 4 | The backbone is captured, but the per-step sampling and feedback chain runs eagerly outside the graph, with `any()`, `.item()` and `nonzero()` on the hot path |
-| Step 5 | Remove the data-dependent synchronizations first (small in time, but they block capture), then capture the sampling chain per batch bucket and sampling signature |
+| Step | Observation                                                                                                                                                                                                                                                                                                                      |
+|---|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Saturation | c16 → c32: throughput +3.83%, mean latency +92.24%, output length constant at 89 tokens                                                                                                                                                                                                                                          |
+| Step 1 | DCGM at c16: `SMACT 34.26%`, `SMOCC 4.72%`, `DRAMA 21.70%`, `TENSO 2.04%`; 291.5 W of 700 W, no clock throttling → no resource saturated.  ⚠️ GRACT was not collected at the time. `SMACT` is a **different quantity** — averaged over SMs, so a kernel occupying few SMs reads low even while the engine is busy — which makes the Step 2 cross-check weaker than a like-for-like one. |
+| Step 2 | Per decode cycle (nsys): graphed backbone 12.7%, non-graph GPU activity 21.5%, **no GPU activity 65.9%**. Total GPU activity of 34.2% (**c32 trace**) **agrees to the order of magnitude** with `SMACT`'s 34.26% (**c16 counters**) — different operating points, different definitions, mechanically unrelated instruments. Order-of-magnitude agreement is the useful signal here, not the decimals (see the note in Step 1)                                                                                                                                            |
+| Step 3 | Per decode step: **~2,954 `cudaLaunchKernel` calls against a single `cudaGraphLaunch`**; synchronization APIs account for only 2.47% of idle time → launch-bound, plus host-side tensor materialization                                                                                                                          |
+| Step 4 | The backbone is captured, but the per-step sampling and feedback chain runs eagerly outside the graph, with `any()`, `.item()` and `nonzero()` on the hot path                                                                                                                                                                   |
+| Step 5 | Remove the data-dependent synchronizations first (small in time, but they block capture), then capture the sampling chain per batch bucket and sampling signature                                                                                                                                                                |
+
+A by-product of Step 2: traces collected through `/start_profile` contained **zero CPU operator
+events** — 3.7 M CUDA-side events and not one `cpu_op`, despite `ProfilerActivity.CPU` being
+requested. Kineto's CPU observers are thread-local, and the profiler was started from the stage's
+asyncio control loop rather than the scheduler thread actually running the model; CUPTI activity
+tracing is process-wide, so the CUDA side was captured normally. Fixed in
+[#1304](https://github.com/sgl-project/sglang-omni/pull/1304) (ATen events: 0 → ~494 k).
+A missing measurement and a measured zero look identical — **validate the instrument before trusting
+Step 3**.
 
 ### (1) Launch-bound: the Qwen3-TTS code predictor ([#1134](https://github.com/sgl-project/sglang-omni/pull/1134))
 
