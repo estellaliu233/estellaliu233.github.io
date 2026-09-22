@@ -4,17 +4,13 @@ icon: fas fa-info-circle
 order: 5
 ---
 
-<!-- Draft — rewrite in your own words whenever you like. -->
+I work on LLM systems: how models are trained and served, and where the time and the
+memory actually go. Most of what I write here is hands-on — reading a scheduler, running a benchmark, taking apart a
+KV cache implementation — and much of it started as something I got wrong the first time.
 
-I work on **LLM systems**: how models are served, where the time and the memory actually go, and
-what it takes to make inference fast enough to be worth running.
-
-Most of what I write here is hands-on — reading a scheduler, running a benchmark, taking apart a
-KV cache implementation — and most of it started as something I got wrong the first time.
-
-Before this I spent my time in search, recommendation and advertising: embedding, retrieval and
+I've also worked on search, recommendation and advertising: embedding, retrieval and
 ranking models serving traffic under tight latency budgets. Those notes live in the
-[Ads & Reco](/adsreco/) tab. The two fields look unrelated, but the hard parts rhyme — a 100 GB
+[Ads & Reco](/adsreco/) tab. The two fields look unrelated, but the hard parts rhyme — at serving time, a 100 GB
 embedding table and a 100 B parameter model hit the same wall, and it is a memory wall, not a
 compute one.
 
@@ -26,6 +22,5 @@ compute one.
 
 ## Elsewhere
 
-- GitHub: [@estellaliu233](https://github.com/estellaliu233)
 - LinkedIn: [estellaxinyuan](https://www.linkedin.com/in/estellaxinyuan/)
 - Google Scholar: [publications](https://scholar.google.com/citations?user=mYGmeOgAAAAJ)
