@@ -220,9 +220,6 @@ the fix measured.
   Only the first call actually blocks, and what it waits for is compute that has to happen anyway.
   The two removed calls were worth 45 µs — **a 0.9% ceiling**.
 - **Lesson:** the cost of synchronization depends on what it waits for, not how many times it happens.
-  The proposed next target is the ~1.1 ms host gap, using overlap scheduling (Higgs had
-  `disable_overlap_schedule=True`). The PR presents coalescing as a building block for that follow-up;
-  it does not measure an overlap-scheduling gain.
 
 ### (3) Host overhead: reference-audio encoding on the CPU in MOSS-TTS Delay ([#1222](https://github.com/sgl-project/sglang-omni/pull/1222))
 
@@ -232,7 +229,6 @@ the fix measured.
 - **Result:** A800 c16 **2.9958 → 4.4395 QPS** (+48.19%), three runs per group with 1088 requests
   per run and preprocessing concurrency 8. GPU memory increased by approximately 3.1 GiB.
 - **Lesson:** Section 2, multi-stage pipelines. CPU preprocessing can leave the next GPU stage waiting.
-  The PR establishes the throughput gain; it does not publish a device-level idle-time attribution.
 
 ### (4) Insufficient load: the default admission cap in Higgs TTS ([#756](https://github.com/sgl-project/sglang-omni/pull/756))
 
