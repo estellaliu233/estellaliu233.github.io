@@ -31,20 +31,7 @@ find the point where throughput stops increasing.
   | Compute | `TENSO` (1004, tensor pipe active) |
   | Memory bandwidth | `DRAMA` (1005, DRAM active) |
   | Interconnect | NVLink TX/RX (1011, 1012) |
-  | Capacity | ⚠️ **Not visible in DCGM** — see below |
-
-- **Capacity has to come from the engine.** The KV cache pool is preallocated at startup, so GPU memory
-  usage looks flat and full whether the pool is empty or exhausted. Both engines expose the same two
-  signals under different names:
-
-  | Signal | vLLM ([metrics](https://docs.vllm.ai/en/latest/design/metrics/)) | SGLang ([metrics](https://docs.sglang.io/docs/references/production_metrics), needs `--enable-metrics`) |
-  |---|---|---|
-  | KV pool occupancy | `vllm:kv_cache_usage_perc` (0–1) | `sglang:token_usage` (0–1) |
-  | Requests evicted for lack of KV space | `vllm:num_preemptions_total` | `sglang:num_retracted_requests_total` (SGLang calls preemption *retraction*) |
-  | Running vs. waiting requests | `vllm:num_requests_running` / `vllm:num_requests_waiting` | `sglang:num_running_reqs` / `sglang:num_queue_reqs` |
-
-  Occupancy near 1.0 with a rising preemption or retraction counter means capacity is the bottleneck,
-  not the host. The running/waiting pair is also the first check for insufficient load (Step 3, case 4).
+  | Capacity | ⚠️ **Not visible in DCGM.** The KV cache pool is preallocated at startup, so memory usage is flat. Use the engine's own [metrics](https://docs.vllm.ai/en/latest/design/metrics/): `vllm:kv_cache_usage_perc` and `vllm:num_preemptions_total` |
 
 - All four low, with low GRACT → the bottleneck is off-device: **host-bound**.
 
@@ -77,7 +64,7 @@ GPU       |██|██|██|██|██|██| |                         
 
 - **Launch-bound** → which region is kernel-dense, and can it be captured in a CUDA Graph?
 - **Synchronization point** → which line triggers it? Use the PyTorch profiler to map ATen ops back to Python
-  source lines. This is the only branch that needs it.
+  source lines. This is where it's indispensable.
   - vLLM: launch with `--profiler-config '{"profiler": "torch", "torch_profiler_dir": "..."}'` (v0.13+), then
     call `/start_profile` and `/stop_profile` ([docs](https://docs.vllm.ai/en/latest/contributing/profiling/))
   - SGLang: set `SGLANG_TORCH_PROFILER_DIR`, then call `/start_profile` and `/stop_profile`
