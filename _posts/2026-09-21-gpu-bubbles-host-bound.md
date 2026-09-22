@@ -188,15 +188,6 @@ the fix measured.
 | Step 4 | The backbone is captured, but the per-step sampling and feedback chain runs eagerly outside the graph, with `any()`, `.item()` and `nonzero()` on the hot path                                                                                                                                                                   |
 | Step 5 | Remove the data-dependent synchronizations first (small in time, but they block capture), then capture the sampling chain per batch bucket and sampling signature                                                                                                                                                                |
 
-A by-product of Step 2: traces collected through `/start_profile` contained **zero CPU operator
-events** — 3.7 M CUDA-side events and not one `cpu_op`, despite `ProfilerActivity.CPU` being
-requested. Kineto's CPU observers are thread-local, and the profiler was started from the stage's
-asyncio control loop rather than the scheduler thread actually running the model; CUPTI activity
-tracing is process-wide, so the CUDA side was captured normally. Fixed in
-[#1304](https://github.com/sgl-project/sglang-omni/pull/1304) (ATen events: 0 → ~494 k).
-A missing measurement and a measured zero look identical — **validate the instrument before trusting
-Step 3**.
-
 ### (1) Launch-bound: the Qwen3-TTS code predictor ([#1134](https://github.com/sgl-project/sglang-omni/pull/1134))
 
 - **Symptom:** 67.7% of the serving loop spent in `_collect_codes`; throughput *decreased* with
