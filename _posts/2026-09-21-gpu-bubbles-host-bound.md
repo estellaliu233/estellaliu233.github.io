@@ -195,7 +195,8 @@ the fix measured.
   mode — thousands of Python-level kernel launches per step.
 - **Fix:** capture the whole predictor chain as one CUDA Graph per (batch bucket, sampling signature),
   with `top_k` quantized to a fixed ladder so requests share graphs.
-- **Result:** **~1.9×** at c8, **~3×** at c32.
+- **Result:** on one H100, **~1.9×** at c8 (graph-on/off arm means: 4.56 vs 2.39 req/s),
+  **~3×** at c32 (5.94 vs 2.00 req/s, **a single A/B pair**); 256 SeedTTS EN samples per leg.
 - **Lesson:** Section 3, item 1. A captured backbone does not mean a captured step.
 
 ### (2) Synchronization point: three D2H copies per step in Higgs TTS ([#564](https://github.com/sgl-project/sglang-omni/issues/564) → [#572](https://github.com/sgl-project/sglang-omni/pull/572))
@@ -203,10 +204,11 @@ the fix measured.
 - **Hypothesis (#564):** three `.cpu()` calls per decode step — three `cudaStreamSynchronize` calls —
   estimated at 5–15% of end-to-end latency.
 - **Fix:** coalesce them into a single D2H copy, with byte-identical output.
-- **Step 6 ablation:** the A/B result was within noise. Per-call timing showed why:
+- **Step 6 ablation:** two matched A/Bs on H200 at c1 were within noise (all gains below 1%).
+  Per-call timing showed why:
 
   ```
-  decode step 4.88 ms = GPU forward 3.72 ms (76%) + host serialization gap 1.10 ms (24%)
+  decode step ~4.88 ms: GPU forward ~3.72 ms, host serialization gap ~1.10 ms
 
   call 1  _cg_was_done               3713 µs  ← waiting for this step's forward pass
   call 2  _cg_codes_BN                 31 µs
@@ -216,29 +218,39 @@ the fix measured.
   Only the first call actually blocks, and what it waits for is compute that has to happen anyway.
   The two removed calls were worth 45 µs — **a 0.9% ceiling**.
 - **Lesson:** the cost of synchronization depends on what it waits for, not how many times it happens.
-  The recoverable time is the 1.1 ms host gap, and the fix for that is overlap scheduling (Higgs had
-  `disable_overlap_schedule=True`). Coalescing is a prerequisite for enabling overlap, not a gain on its own.
+  The proposed next target is the ~1.1 ms host gap, using overlap scheduling (Higgs had
+  `disable_overlap_schedule=True`). The PR presents coalescing as a building block for that follow-up;
+  it does not measure an overlap-scheduling gain.
 
 ### (3) Host overhead: reference-audio encoding on the CPU in MOSS-TTS Delay ([#1222](https://github.com/sgl-project/sglang-omni/pull/1222))
 
 - **Symptom:** under concurrency, the preprocessing stage encoded reference audio on the CPU and could
   not feed the AR stage fast enough.
 - **Fix:** decouple the codec from the processor and run the preprocessing codec on the GPU.
-- **Result:** A800 c16 **2.996 → 4.440 QPS** (+48%).
-- **Lesson:** Section 2, multi-stage pipelines. Host work at a stage boundary issues no CUDA calls, so on
-  the timeline it appears as a bubble with an empty API row.
+- **Result:** A800 c16 **2.9958 → 4.4395 QPS** (+48.19%), three runs per group with 1088 requests
+  per run and preprocessing concurrency 8. GPU memory increased by approximately 3.1 GiB.
+- **Lesson:** Section 2, multi-stage pipelines. CPU preprocessing can leave the next GPU stage waiting.
+  The PR establishes the throughput gain; it does not publish a device-level idle-time attribution.
 
 ### (4) Insufficient load: the default admission cap in Higgs TTS ([#756](https://github.com/sgl-project/sglang-omni/pull/756))
 
-- **Symptom:** c16 → c32 throughput +1.8%, latency doubled — indistinguishable from a host-bound symptom.
+- **Symptom:** in the [independent H100 cross-check](https://github.com/sgl-project/sglang-omni/pull/756#issuecomment-4759834453),
+  `16/16` at c16 → c32 gives 15.23 → 15.28 req/s (**+0.33%**), while mean RTF rises
+  0.2489 → 0.5167 (about 2.08×) — the same plateau symptom that can suggest host overhead.
 - **Root cause:** the default `max_running_requests / cuda_graph_max_bs` was `16/16`. The client sent 32
   concurrent requests, but the engine admitted only 16 and the rest queued. The GPU was not starved by
   the host; the work never reached it.
 - **Fix:** raise the default to `64/64`, and size model-side buffers from `max_running_requests`
   (they were sized from a stale constant, which crashed capture at 128).
-- **Result:** c32 throughput 15.377 → 21.261 req/s (**+38.3%**), RTF −28.8%, no WER regression.
+- **Result:** lifting the cap to **`32/32` alone** gives **+38.3% at c32 on H200**
+  (15.377 → 21.261 req/s, RTF −28.8%, no WER regression observed in the checked runs).
+  `64/64` became the default because it extends the plateau to higher concurrency —
+  **26.33 vs 20.44 req/s at c64** for `64/64` vs `32/32` in the independent H100 cross-check.
+  It did not win at every point: at c32 on H100, `64/64` gave 20.64 vs 21.30 req/s for `32/32`.
 - **Lesson:** before suspecting the host, check that the engine's `#running-req` actually reaches the
-  intended concurrency. At c128 it peaked at 78.
+  intended concurrency. In the [H100 follow-up](https://github.com/sgl-project/sglang-omni/pull/756#issuecomment-4760314386),
+  even `128/128` at c128 only reached a peak decode `#running-req` of 78; client concurrency
+  includes time in other stages and queues.
 
 ## Takeaway
 
