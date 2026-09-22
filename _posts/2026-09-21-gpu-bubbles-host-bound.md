@@ -263,9 +263,7 @@ Step 3**.
   **26.33 vs 20.44 req/s at c64** for `64/64` vs `32/32` in the independent H100 cross-check.
   It did not win at every point: at c32 on H100, `64/64` gave 20.64 vs 21.30 req/s for `32/32`.
 - **Lesson:** before suspecting the host, check that the engine's `#running-req` actually reaches the
-  intended concurrency. In the [H100 follow-up](https://github.com/sgl-project/sglang-omni/pull/756#issuecomment-4760314386),
-  even `128/128` at c128 only reached a peak decode `#running-req` of 78; client concurrency
-  includes time in other stages and queues.
+  intended concurrency.
 
 ## Takeaway
 
