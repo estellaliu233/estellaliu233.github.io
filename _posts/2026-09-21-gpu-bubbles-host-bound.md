@@ -171,17 +171,17 @@ they used to be.
 [sglang-omni](https://github.com/sgl-project/sglang-omni) serves multi-stage TTS and omni models, and it
 matches nearly every high-risk trait in Section 2: small models, short outputs, multiple stages and
 per-step host decisions. The cases below are public issues and PRs from the repository: first an
-investigation that walks through all six steps, then four PRs, one for each Step 3 outcome, showing how
-each traced its bubble to that cause. Each case links to its source, where you can follow how it was
-fixed and what the fix measured.
+investigation that walks through all six steps, then four PRs, each an example of one Step 3 outcome.
+Each case links to its source, where you can follow how the cause was found, how it was fixed and what
+the fix measured.
 
 ### A full pass: MOSS-TTS Delay ([#1232](https://github.com/sgl-project/sglang-omni/issues/1232))
 
 | Step | Observation |
 |---|---|
 | Saturation | c16 → c32: throughput +3.83%, mean latency +92.24%, output length constant at 89 tokens |
-| Step 1 | DCGM at c16: `SMACT 34.26%`, `SMOCC 4.72%`, `DRAMA 21.70%`, `TENSO 2.04%`; 291.5 W of 700 W, no clock throttling → no resource saturated |
-| Step 2 | Per decode cycle (nsys): graphed backbone 12.7%, non-graph GPU activity 21.5%, **no GPU activity 65.9%**. Total GPU activity of 34.2% matches DCGM's 34.26% |
+| Step 1 | DCGM at c16: `SMACT 34.26%`, `SMOCC 4.72%`, `DRAMA 21.70%`, `TENSO 2.04%`; 291.5 W of 700 W, no clock throttling → no resource saturated. GRACT was not collected at the time; SMACT is averaged over SMs, so it can be lower than GRACT, and it tracks GRACT closely here only because the kernels that ran kept all SMs busy |
+| Step 2 | Per decode cycle (nsys): graphed backbone 12.7%, non-graph GPU activity 21.5%, **no GPU activity 65.9%**. Total GPU activity of 34.2% matches SMACT's 34.26% (see the note in Step 1) |
 | Step 3 | Per decode step: **~2,954 `cudaLaunchKernel` calls against a single `cudaGraphLaunch`**; synchronization APIs account for only 2.47% of idle time → launch-bound, plus host-side tensor materialization |
 | Step 4 | The backbone is captured, but the per-step sampling and feedback chain runs eagerly outside the graph, with `any()`, `.item()` and `nonzero()` on the hot path |
 | Step 5 | Remove the data-dependent synchronizations first (small in time, but they block capture), then capture the sampling chain per batch bucket and sampling signature |
