@@ -88,20 +88,21 @@ Each of these either shortens the GPU side of a step or adds work on the host si
 - **Small models (≲8B):** fewer weights make each GPU step short, while the host's per-step work
   (scheduling, sampling, launching kernels) stays the same. The ratio flips and the host becomes the bottleneck.
 - **Short outputs (tens to ~100 tokens):** a request is only a few decode steps, each with little GPU work,
-  so per-step host cost dominates. The MOSS-TTS workload in Section 4 averages 89 tokens per request.
+  so per-step host cost dominates. A larger batch amortizes it — as long as the host's per-step work does
+  not grow with the batch. MOSS-TTS in Section 4 (89 tokens per request) is the counterexample: its
+  per-step sampling ran per request, so doubling concurrency added only 3.83% throughput.
 - **Multi-stage pipelines** (TTS: text encoder → AR → vocoder; omni models): stages are orchestrated by
   the host, and every stage boundary is a synchronization point by construction.
 - **Decoding logic that needs a host-side decision every step:** when the next step depends on a value the
   GPU just produced and the logic consuming it runs on the host, that value is copied back every step —
   one synchronization per step, and often a shape that changes from step to step, which blocks CUDA Graph
-  capture. Structured output (grammar state machines), beam search and stop-string matching all have this shape.
+  capture.
   - *Example — speculative decoding:* each step verifies k draft tokens, and the number accepted differs
     per request. Acceptance, KV cache rollback and sequence bookkeeping have traditionally run on the host,
     so the step waits on a D2H copy and the next batch has a data-dependent shape. Engines work around it by
     padding every request to k + 1 slots and masking rejected tokens (static shapes, so graphs still apply,
     at the cost of computing tokens that get thrown away), and by moving acceptance onto the GPU.
-- **Low concurrency / batch size 1:** there is nothing to spread weight loading and launch overhead across.
-  This is often a property of the deployment rather than a bug — the fix is more concurrency, not new code.
+- **Low concurrency / batch size 1:** this is often a property of the deployment rather than a bug — the fix is more concurrency, not new code.
 - **High tensor-parallel degree:** TP divides each GPU's compute by N but not the host work — kernel
   launches per step stay the same and NCCL calls are added. All ranks synchronize every step, so a hiccup
   on one host thread stalls all N GPUs.
@@ -120,18 +121,9 @@ host cost per request = C_request + C_step × steps / batch
 | | Short outputs | High QPS + very short outputs (1–5 tokens) |
 |---|---|---|
 | Dominant term | `C_step`: a few steps, each light on the GPU | `C_request`: requests arrive faster than the host can process them |
-| Does a larger batch help? | Yes — short requests finish together with no long tail, which is ideal for batching | Barely — batching amortizes only per-step cost, and there are hardly any steps |
+| Does a larger batch help? | Yes, if per-step host work is fixed rather than per request — short requests finish together with no long tail, which is ideal for batching | Barely — batching amortizes only per-step cost, and there are hardly any steps |
 | What helps | Larger batches, CUDA Graphs | Take request handling off the engine loop (process isolation), then parallelize it (more API server processes, e.g. vLLM `--api-server-count`, or more replicas) |
 | Typical workloads | Short generations, TTS utterances | Classification, moderation, reranking |
-
-`C_request` is the same for every request; what changes is how many tokens it is amortized over:
-
-```
-1000 output tokens → cost spread over 1000 tokens → negligible per token
-   3 output tokens → cost spread over    3 tokens → 333× higher per token
-```
-
-The absolute cost is unchanged; the denominator collapsed.
 
 ## 3. What engines already do, and what is left to the operator
 
@@ -178,11 +170,12 @@ they used to be.
 
 [sglang-omni](https://github.com/sgl-project/sglang-omni) serves multi-stage TTS and omni models, and it
 matches nearly every high-risk trait in Section 2: small models, short outputs, multiple stages and
-per-step host decisions. I start with one full pass through the six steps. After that, I picked four PRs
-from the repository, one for each Step 3 outcome, and show how each one traced its bubble to that cause.
-Every case links to the PR, so you can follow how it was fixed and what the fix measured.
+per-step host decisions. The cases below are public issues and PRs from the repository: first an
+investigation that walks through all six steps, then four PRs, one for each Step 3 outcome, showing how
+each traced its bubble to that cause. Each case links to its source, where you can follow how it was
+fixed and what the fix measured.
 
-### A full pass: MOSS-TTS Delay ([#1232](https://github.com/sgl-project/sglang-omni/issues/1232), my investigation)
+### A full pass: MOSS-TTS Delay ([#1232](https://github.com/sgl-project/sglang-omni/issues/1232))
 
 | Step | Observation |
 |---|---|
