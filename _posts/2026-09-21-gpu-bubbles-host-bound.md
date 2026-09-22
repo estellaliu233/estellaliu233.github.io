@@ -172,11 +172,7 @@ they used to be.
 
 [sglang-omni](https://github.com/sgl-project/sglang-omni) serves multi-stage TTS and omni models, and it
 matches nearly every high-risk trait in Section 2: small models, short outputs, multiple stages and
-per-step host decisions. The cases below are public issues and PRs from the repository —
-[#1232](https://github.com/sgl-project/sglang-omni/issues/1232),
-[#756](https://github.com/sgl-project/sglang-omni/pull/756) and
-[#1304](https://github.com/sgl-project/sglang-omni/pull/1304) are mine; the rest are teammates' fixes
-that I traced through the same six steps. First an
+per-step host decisions. The cases below are public issues and PRs from the repository: first an
 investigation that walks through all six steps, then four PRs, each an example of one Step 3 outcome.
 Each case links to its source, where you can follow how the cause was found, how it was fixed and what
 the fix measured.
