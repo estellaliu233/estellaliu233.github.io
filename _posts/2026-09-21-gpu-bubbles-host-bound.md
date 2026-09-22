@@ -193,11 +193,6 @@ Every case links to the PR, so you can follow how it was fixed and what the fix 
 | Step 4 | The backbone is captured, but the per-step sampling and feedback chain runs eagerly outside the graph, with `any()`, `.item()` and `nonzero()` on the hot path |
 | Step 5 | Remove the data-dependent synchronizations first (small in time, but they block capture), then capture the sampling chain per batch bucket and sampling signature |
 
-A by-product: traces collected through `/start_profile` contained **zero CPU operator events**. Kineto's
-CPU callbacks are thread-local, and the profiler was started on a different thread from the one running
-the model. Fixed in [#1304](https://github.com/sgl-project/sglang-omni/pull/1304) (ATen events: 0 → ~494k).
-**Validate the instrument before trusting Step 3.**
-
 ### (1) Launch-bound: the Qwen3-TTS code predictor ([#1134](https://github.com/sgl-project/sglang-omni/pull/1134))
 
 - **Symptom:** 67.7% of the serving loop spent in `_collect_codes`; throughput *decreased* with
@@ -236,12 +231,11 @@ the model. Fixed in [#1304](https://github.com/sgl-project/sglang-omni/pull/1304
 - **Symptom:** under concurrency, the preprocessing stage encoded reference audio on the CPU and could
   not feed the AR stage fast enough.
 - **Fix:** decouple the codec from the processor and run the preprocessing codec on the GPU.
-- **Result:** A800 c16 **2.996 → 4.440 QPS** (+48%). My independent H100 measurement (#1232):
-  non-AR time per request **2.33 s → 0.41 s (−82.6%)**.
+- **Result:** A800 c16 **2.996 → 4.440 QPS** (+48%).
 - **Lesson:** Section 2, multi-stage pipelines. Host work at a stage boundary issues no CUDA calls, so on
   the timeline it appears as a bubble with an empty API row.
 
-### (4) Insufficient load: the default admission cap in Higgs TTS ([#756](https://github.com/sgl-project/sglang-omni/pull/756), my PR)
+### (4) Insufficient load: the default admission cap in Higgs TTS ([#756](https://github.com/sgl-project/sglang-omni/pull/756))
 
 - **Symptom:** c16 → c32 throughput +1.8%, latency doubled — indistinguishable from a host-bound symptom.
 - **Root cause:** the default `max_running_requests / cuda_graph_max_bs` was `16/16`. The client sent 32
@@ -272,9 +266,8 @@ the model. Fixed in [#1304](https://github.com/sgl-project/sglang-omni/pull/1304
 - Modal, [Host overhead is killing your inference efficiency](https://modal.com/blog/host-overhead-inference-efficiency)
 
 **sglang-omni cases**
-- [#1232](https://github.com/sgl-project/sglang-omni/issues/1232) Profile GPU-side bottlenecks in MOSS-TTS-v1.5 Delay (mine)
-- [#1304](https://github.com/sgl-project/sglang-omni/pull/1304) Fix missing CPU operator events in scheduler-thread profiling (mine)
-- [#756](https://github.com/sgl-project/sglang-omni/pull/756) Raise Higgs TTS AR server default to 64 (mine)
+- [#1232](https://github.com/sgl-project/sglang-omni/issues/1232) Profile GPU-side bottlenecks in MOSS-TTS-v1.5 Delay
+- [#756](https://github.com/sgl-project/sglang-omni/pull/756) Raise Higgs TTS AR server default to 64
 - [#1134](https://github.com/sgl-project/sglang-omni/pull/1134) CUDA-graph the Qwen3-TTS code-predictor chain
 - [#564](https://github.com/sgl-project/sglang-omni/issues/564) / [#572](https://github.com/sgl-project/sglang-omni/pull/572) Batch the per-step D2H syncs in Higgs TTS
 - [#1222](https://github.com/sgl-project/sglang-omni/pull/1222) Run MOSS-TTS Delay reference encoding on GPU
