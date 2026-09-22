@@ -83,18 +83,48 @@ was wrong — go back to Step 3.**
 
 ## 2. Workloads most exposed to GPU bubbles
 
-- **Small models (≲8B)**
-- **Short outputs** (tens to ~100 tokens): per-request fixed cost is barely amortized
-- **Multi-stage pipelines** (TTS: text encoder → AR → vocoder; omni models): stages are orchestrated
-  by the host, and stage boundaries introduce synchronization points by construction
-- **Decoding logic that needs a host-side decision every step**
-- **Low concurrency / batch size 1**
-- **High tensor-parallel degree**
-- **High QPS with very short outputs**
+Each of these either shortens the GPU side of a step or adds work on the host side:
 
-The last one deserves a closer look. Per-request host cost (HTTP parsing, tokenization, scheduling
-admission and retirement) is the same for every request. What changes is how many tokens it is
-amortized over:
+- **Small models (≲8B):** fewer weights make each GPU step short, while the host's per-step work
+  (scheduling, sampling, launching kernels) stays the same. The ratio flips and the host becomes the bottleneck.
+- **Short outputs (tens to ~100 tokens):** a request is only a few decode steps, each with little GPU work,
+  so per-step host cost dominates. The MOSS-TTS workload in Section 4 averages 89 tokens per request.
+- **Multi-stage pipelines** (TTS: text encoder → AR → vocoder; omni models): stages are orchestrated by
+  the host, and every stage boundary is a synchronization point by construction.
+- **Decoding logic that needs a host-side decision every step:** when the next step depends on a value the
+  GPU just produced and the logic consuming it runs on the host, that value is copied back every step —
+  one synchronization per step, and often a shape that changes from step to step, which blocks CUDA Graph
+  capture. Structured output (grammar state machines), beam search and stop-string matching all have this shape.
+  - *Example — speculative decoding:* each step verifies k draft tokens, and the number accepted differs
+    per request. Acceptance, KV cache rollback and sequence bookkeeping have traditionally run on the host,
+    so the step waits on a D2H copy and the next batch has a data-dependent shape. Engines work around it by
+    padding every request to k + 1 slots and masking rejected tokens (static shapes, so graphs still apply,
+    at the cost of computing tokens that get thrown away), and by moving acceptance onto the GPU.
+- **Low concurrency / batch size 1:** there is nothing to spread weight loading and launch overhead across.
+  This is often a property of the deployment rather than a bug — the fix is more concurrency, not new code.
+- **High tensor-parallel degree:** TP divides each GPU's compute by N but not the host work — kernel
+  launches per step stay the same and NCCL calls are added. All ranks synchronize every step, so a hiccup
+  on one host thread stalls all N GPUs.
+- **High QPS with very short outputs:** per-request host cost dominates — see below.
+
+### Short outputs vs. high QPS with very short outputs
+
+The two look alike but have different bottlenecks. Host cost per request splits into two terms:
+
+```
+host cost per request = C_request + C_step × steps / batch
+  C_request : HTTP parsing, tokenization, admission and retirement — once per request, not shared
+  C_step    : scheduling, input preparation, kernel launches — once per step, shared by the batch
+```
+
+| | Short outputs | High QPS + very short outputs (1–5 tokens) |
+|---|---|---|
+| Dominant term | `C_step`: a few steps, each light on the GPU | `C_request`: requests arrive faster than the host can process them |
+| Does a larger batch help? | Yes — short requests finish together with no long tail, which is ideal for batching | Barely — batching amortizes only per-step cost, and there are hardly any steps |
+| What helps | Larger batches, CUDA Graphs | Take request handling off the engine loop (process isolation), then parallelize it (more API server processes, e.g. vLLM `--api-server-count`, or more replicas) |
+| Typical workloads | Short generations, TTS utterances | Classification, moderation, reranking |
+
+`C_request` is the same for every request; what changes is how many tokens it is amortized over:
 
 ```
 1000 output tokens → cost spread over 1000 tokens → negligible per token
@@ -116,25 +146,16 @@ The absolute cost is unchanged; the denominator collapsed.
 | Reduced Python overhead | Object pooling | [v0.6.0](https://blog.vllm.ai/2024/09/05/perf-update.html): +24% | — |
 | Input preparation on the GPU | Triton kernels for input preparation, targeting zero CPU–GPU synchronization | [Model Runner V2](https://vllm.ai/blog/2026-03-24-mrv2) (2026): Qwen3-0.6B on GB200 +56% | — |
 
-Outside these two engines, [llama.cpp](https://developer.nvidia.com/blog/optimizing-llama-cpp-ai-inference-with-cuda-graphs/)
-reported 1.2× from CUDA Graphs at batch size 1.
 
 ### B. Without modifying the engine
 
-**0. Confirm the overlap features are actually enabled.** Built into the engine does not mean enabled
-in your deployment. vLLM enables async scheduling by default from v0.14 (`--async-scheduling` on older
-versions; see [engine arguments](https://docs.vllm.ai/en/stable/configuration/engine_args/)); SGLang's overlap scheduler is on by default — make sure `--disable-overlap-schedule` is not set.
+**0. Confirm the relevant features are actually on.** Built into the engine does not mean enabled in
+your deployment. Overlap scheduling is on by default in both engines, but a flag can switch it off
+(vLLM `--no-async-scheduling`, SGLang `--disable-overlap-schedule`), and an engine may turn it off for
+configurations it does not support. Check the effective configuration at startup.
 
 **1. Verify that CUDA Graphs cover your traffic.** This is the most common silent failure. Graphs are
 captured per batch-size bucket, and a batch outside the captured sizes falls back to eager entirely.
-
-| Check | vLLM | SGLang |
-|---|---|---|
-| Captured batch sizes vs. real batch sizes | `--cudagraph-capture-sizes`; the captured sizes are in the startup log | `--cuda-graph-max-bs` (`--cuda-graph-max-bs-decode` / `-prefill` in recent versions); also in the startup log |
-| Graphs switched off entirely | `--enforce-eager` | `--disable-cuda-graph` |
-| Graph mode | Full graphs need attention-backend support and fall back to piecewise silently | — |
-
-My [#756](https://github.com/sgl-project/sglang-omni/pull/756) case in Section 4 is exactly this check on SGLang: a default of 16 capped both admission and the captured batch sizes.
 
 **2. Increase batch size.** The most direct way to lengthen the GPU side of each step: vLLM
 `--max-num-seqs` / `--max-num-batched-tokens`, SGLang `--max-running-requests`. Keep the CUDA Graph
@@ -157,8 +178,9 @@ they used to be.
 
 [sglang-omni](https://github.com/sgl-project/sglang-omni) serves multi-stage TTS and omni models, and it
 matches nearly every high-risk trait in Section 2: small models, short outputs, multiple stages and
-per-step host decisions. Below is one full pass through the six steps, followed by one case for each
-Step 3 outcome.
+per-step host decisions. I start with one full pass through the six steps. After that, I picked four PRs
+from the repository, one for each Step 3 outcome, and show how each one traced its bubble to that cause.
+Every case links to the PR, so you can follow how it was fixed and what the fix measured.
 
 ### A full pass: MOSS-TTS Delay ([#1232](https://github.com/sgl-project/sglang-omni/issues/1232), my investigation)
 
@@ -246,7 +268,6 @@ the model. Fixed in [#1304](https://github.com/sgl-project/sglang-omni/pull/1304
 - vLLM, [vLLM V1: A Major Upgrade to vLLM's Core Architecture](https://vllm.ai/blog/2025-01-27-v1-alpha-release) (2025)
 - vLLM, [Model Runner V2](https://vllm.ai/blog/2026-03-24-mrv2) (2026)
 - LMSYS, [SGLang v0.4: Zero-Overhead Batch Scheduler](https://www.lmsys.org/blog/2024-12-04-sglang-v0-4/) (2024)
-- NVIDIA, [Optimizing llama.cpp AI Inference with CUDA Graphs](https://developer.nvidia.com/blog/optimizing-llama-cpp-ai-inference-with-cuda-graphs/) (2024)
 - Elizabeth Thomas, [Efficiently Serving LLMs (Part 4): How CUDA Graphs make vLLM think faster](https://www.linkedin.com/pulse/efficiently-serving-llms-part-4-how-cuda-graphs-make-vllm-thomas-4ofuc) (2025)
 - Modal, [Host overhead is killing your inference efficiency](https://modal.com/blog/host-overhead-inference-efficiency)
 
