@@ -225,14 +225,20 @@ the conclusion.
   The two removed calls were worth 45 µs — **a 0.9% ceiling**.
 - **Lesson:** the cost of synchronization depends on what it waits for, not how many times it happens.
 
-### (3) Host overhead: reference-audio encoding on the CPU in MOSS-TTS Delay ([#1222](https://github.com/sgl-project/sglang-omni/pull/1222))
+### (3) Misplaced work: MOSS-TTS Delay encoded reference audio on the CPU ([#1222](https://github.com/sgl-project/sglang-omni/pull/1222))
 
-- **Symptom:** under concurrency, the preprocessing stage encoded reference audio on the CPU and could
-  not feed the AR stage fast enough.
-- **Fix:** decouple the codec from the processor and run the preprocessing codec on the GPU.
+- **Symptom:** under concurrency, the preprocessing stage could not feed prepared requests to the AR
+  stage fast enough.
+- **Root cause:** the processor owned the MOSS audio codec and ran it on the CPU, so reference
+  encoding, a neural codec forward pass, sat in a CPU stage upstream of the GPU.
+- **Fix:** decouple the codec from the processor and run reference encoding on the stage's assigned
+  GPU. Audio loading and text tokenization stay on the CPU. The extra GPU memory from loading the
+  full codec was later removed by [#1727](https://github.com/sgl-project/sglang-omni/pull/1727),
+  which loads only the parts each stage uses.
 - **Result:** A800 c16 **2.9958 → 4.4395 QPS** (+48.19%), three runs per group with 1088 requests
-  per run and preprocessing concurrency 8. GPU memory increased by approximately 3.1 GiB.
-- **Lesson:** Section 2, multi-stage pipelines. CPU preprocessing can leave the next GPU stage waiting.
+  per run and preprocessing concurrency 8.
+- **Lesson:** by the symptom this is host-bound: the GPU waits on CPU work. But that work was in the
+  wrong place. Before optimizing host code, check whether the work should be on the host at all.
 
 ### (4) Insufficient load: the default admission cap in Higgs TTS ([#756](https://github.com/sgl-project/sglang-omni/pull/756))
 
@@ -276,5 +282,6 @@ the conclusion.
 - [#1134](https://github.com/sgl-project/sglang-omni/pull/1134) CUDA-graph the Qwen3-TTS code-predictor chain
 - [#564](https://github.com/sgl-project/sglang-omni/issues/564) / [#572](https://github.com/sgl-project/sglang-omni/pull/572) Batch the per-step D2H syncs in Higgs TTS
 - [#1222](https://github.com/sgl-project/sglang-omni/pull/1222) Run MOSS-TTS Delay reference encoding on GPU
+- [#1727](https://github.com/sgl-project/sglang-omni/pull/1727) Load MOSS-Audio-Tokenizer components per pipeline stage
 
 Numbers in Section 4 are quoted from these PRs and issues; figures in Section 3 are as reported by the linked sources.
