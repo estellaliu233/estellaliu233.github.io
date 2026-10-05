@@ -69,8 +69,8 @@ expected running ceiling ≈ X ÷ long-tail context length in real traffic (inpu
 | What Step 1 shows | What it means | What to check next |
 |---|---|---|
 | Ceiling is low (single digits) and close to the observed running count | Consistent with long context | Confirm the cache is actually full (Step 2), then check bandwidth (Step 4) |
-| Ceiling is high, but few requests run and the cache is full | Something else is occupying the cache | Duplicated prefixes and prefix-cache hit rate first; then re-check `X` |
-| Ceiling is high, few requests run, cache **not** full | Not a KV problem | Admission caps (`max_num_seqs`, token budget), long prefills, host overhead |
+| Ceiling is high, but few requests run and the cache is full | The ceiling's assumptions are wrong | Re-measure lengths including output tokens; re-read `X` from the current startup log |
+| Ceiling is high, few requests run, cache **not** full | Not a KV problem | Admission caps (`max_num_seqs`, token budget), long prefills taking most of each step's token budget (time, not memory), host overhead |
 | Ceiling < 1 | The longest requests cannot fit at all | A deployment issue: startup fails or `max_model_len` rejects them |
 
 ### Step 2 — Confirm the KV cache is actually full
@@ -103,7 +103,7 @@ KV full? (usage ≥ 0.9 sustained, and waiting or preemptions rising)
 │         └─ Few running  → check the length distribution
 │              ├─ More long requests     → long context (this note)
 │              └─ Requests are not long  → KV pool too small (configuration)
-└─ No → not a capacity problem: admission caps, long prefills, bandwidth, host overhead
+└─ No → not a capacity problem: admission caps, long prefills eating the per-step token budget, bandwidth, host overhead
 ```
 
 Two signals do most of the work:
