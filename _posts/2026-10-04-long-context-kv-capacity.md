@@ -41,13 +41,8 @@ Llama3-8B supports a maximum batch size of 4 at 128K context.
 | | What you see | Is it a problem? |
 |---|---|---|
 | **① The long request is slow** | Long TTFT (long prefill), somewhat higher TPOT (more KV to read) | No — long requests are expected to be slower |
-| **② Others slow down** | Short requests queue longer or are preempted and recomputed; their p99 worsens | Yes — interference |
-| **③ Throughput drops** | A few long requests fill the KV cache, fewer requests run, the batch shrinks | Yes — and it is the root |
-
-③ is the root: decode is memory-bandwidth-bound, and a large batch is what amortizes reading the weights
-each step. With the cache occupied by a few long requests, each pass over the weights produces fewer tokens.
-② follows from ③ — fewer slots, so the rest wait. Rising latency appears in almost every serving bottleneck;
-**few running requests with a full KV cache** is what is specific to this one.
+| **② Others slow down** | Short requests queue longer or are preempted and recomputed; their p99 worsens | Yes |
+| **③ Throughput drops** | A few long requests fill the KV cache, fewer requests run, the batch shrinks | Yes |
 
 ## 2. Diagnosis
 
