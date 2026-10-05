@@ -124,9 +124,7 @@ after a preemption lands in the prefill or decode interval instead
 ([`stats.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/metrics/stats.py)).
 
 These histograms are labeled only by model and engine, not by request length, so isolating short requests needs
-per-request data (client-side results or request logs). In vLLM's default FCFS policy, the request preempted is
-the last one in the running queue — the most recently scheduled — regardless of its length
-([`scheduler.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py)).
+per-request data (client-side results or request logs).
 
 ### Step 4 — Check whether bandwidth has also hit its ceiling
 
@@ -154,12 +152,12 @@ onset move in proportion to the change in KV bytes per token.
 
 ## 3. Workloads most exposed
 
-| Trait | Why | Example |
-|---|---|---|
-| Long documents / codebases | The input itself is long | Contract review, a whole repository as context |
-| Reasoning models | Long outputs; KV keeps growing during decode | Long chains of thought |
+| Trait | Why | Example                                              |
+|---|---|------------------------------------------------------|
+| Long documents / codebases | The input itself is long | Contract review, a whole repository as context       |
+| Reasoning models | Long outputs; KV keeps growing during decode | Long chains of thought                               |
 | Long-running agents | The trajectory grows with every step | Many tool calls, each result appended to the context |
-| Very long user histories | The history itself is long | Generative recommenders: 200 watched items already fill a 1,536-token prompt in [Token Factory](https://arxiv.org/abs/2606.19635)'s baseline |
+| Very long user histories | The history itself is long | Generative recommendations|
 
 **Less exposed:** short contexts (a few thousand tokens), and models whose per-token KV is already small
 (MLA, many linear-attention layers).
@@ -170,7 +168,7 @@ onset move in proportion to the change in KV bytes per token.
 
 | Approach | Method | Who changes | Saves capacity | Saves bandwidth | Cost |
 |---|---|---|---|---|---|
-| Management (prerequisite) | [PagedAttention](https://arxiv.org/abs/2309.06180) | Engine | Removes waste, not KV itself: 60–80% waste in earlier systems → under 4% ([vLLM blog](https://blog.vllm.ai/2023/06/20/vllm.html)) | — | Kernels must handle non-contiguous blocks |
+| Management  | [PagedAttention](https://arxiv.org/abs/2309.06180) | Engine | Removes waste, not KV itself: 60–80% waste in earlier systems → under 4% ([vLLM blog](https://blog.vllm.ai/2023/06/20/vllm.html)) | — | Kernels must handle non-contiguous blocks |
 | Compression | [MQA](https://arxiv.org/abs/1911.02150) / [GQA](https://arxiv.org/abs/2305.13245): query heads share KV heads | Model | ✅ | ✅ | Decided at training time |
 | Compression | [MLA](https://arxiv.org/abs/2405.04434): K and V stored as a low-dimensional latent | Model | ✅ | ✅ | Decided at training time |
 | Compression | Along the sequence: several tokens' KV merged into one entry ([DeepSeek-V4](https://arxiv.org/abs/2606.19348)) | Model | ✅ | ✅ | Decided at training time |
@@ -186,28 +184,11 @@ Two approaches that **do not** solve this problem:
 - **Prefix reuse** ([prefix caching](https://docs.vllm.ai/en/latest/design/prefix_caching/), [RadixAttention](https://arxiv.org/abs/2312.07104))
   helps only when content repeats across requests. When one copy already does not fit, there is nothing to share.
 
-### B. Too many requests vs. too long: part of the cure is opposite
-
-| Action | Too many requests | Context too long |
-|---|---|---|
-| Lower concurrency (`--max-num-seqs`) | ✅ Fewer admitted, the cache fits | ❌ Only a few are running anyway |
-| More replicas | ✅ Load spreads out | ❌ Every replica has the same memory; a long request is just as big anywhere |
-| Lower `--max-model-len` | ❌ Rejects long requests for nothing | ✅ At the cost of rejecting very long requests |
-| Separate pool for long requests | Not needed | ✅ Long requests stop crowding out short ones |
-| Shorter inputs (summaries, tighter RAG) | Little help | ✅ Removes the cause |
-
-Real traffic is usually mixed: mostly short requests, a few very long ones. The most useful step is to route
-long requests to their own deployment, then scale the short pool like a request-count problem and tune the
-long pool like a context-length problem.
-
-### C. Without modifying the engine
+### B. Without modifying the engine
 
 **0. Turn on FP8 KV.** Half the bytes per token of BF16, so both capacity and bytes read are halved.
 vLLM `--kv-cache-dtype fp8` ([`fp8` = `fp8_e4m3`](https://github.com/vllm-project/vllm/blob/main/vllm/config/cache.py));
-SGLang `--kv-cache-dtype fp8_e4m3` (SGLang accepts `fp8_e4m3` / `fp8_e5m2`, not plain `fp8`;
-[source](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/arg_groups/fields/model.py)).
-Measure accuracy on your own task. It is not always faster: on RDNA3, which has no native FP8,
-FP8 KV made decode attention slower than BF16 ([vllm#56992](https://github.com/vllm-project/vllm/issues/56992)).
+SGLang `--kv-cache-dtype fp8_e4m3`.
 
 **1. Give the KV cache more memory.** vLLM `--gpu-memory-utilization` (default 0.92);
 SGLang `--mem-fraction-static` (the fraction for weights plus the KV pool). Too high risks OOM.
@@ -232,20 +213,12 @@ helping once TP exceeds the number of KV heads: vLLM computes `max(1, kv_heads /
 beyond that ([`model.py`](https://github.com/vllm-project/vllm/blob/main/vllm/config/model.py)). Llama-3-70B has
 8 KV heads, so TP=16 does not reduce per-GPU KV further than TP=8. The costs are communication and money.
 
-The arithmetic for Llama-3-70B at 128K (40 GiB of KV per request), illustrative:
-
-```
-BF16 weights ≈ 140 GB — does not fit on one 80 GB GPU
-TP=2 (160 GB): ~20 GB left  →  not even one 128K request
-TP=4 (320 GB): ~150–180 GB left  →  about 3–4 requests at 128K
-```
-
-### D. High exposure ≠ should change: three checks
+### C. High exposure ≠ should change: three checks
 
 | Check | Question | If it fails |
 |---|---|---|
 | ① Is a single copy really too large? | Is the same prefix stored many times? | Fix prefix reuse first — lossless and cheap. Come back if the cache is still full |
-| ② Is the accuracy cost acceptable? | Quantization, eviction and input compression are all lossy | Evaluate offline on your own task, including long-context retrieval benchmarks such as RULER |
+| ② Is the accuracy cost acceptable? | Quantization and input compression are all lossy | Evaluate offline on your own task |
 | ③ Is there transfer bandwidth? | Offload depends on PCIe / network bandwidth | Offload only cold data, or quantize instead |
 
 ## 5. Public cases
