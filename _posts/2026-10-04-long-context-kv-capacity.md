@@ -273,15 +273,12 @@ Each case answers one question you will face in Sections 2 and 4. Numbers are as
 
 ## 6. The same problem outside LLM serving
 
-Cost that grows with the input against a fixed memory budget is an old problem. PagedAttention itself is
-inspired by virtual memory and paging in operating systems ([Kwon et al., 2023](https://arxiv.org/abs/2309.06180)).
-
-### Recommender systems (RecSys 2026)
+Cost that grows with the input against a fixed memory budget is an old problem.
 
 Three industry papers from RecSys 2026 run into the same pattern: something grows without bound, and memory
 or I/O does not. The LLM-side analogue in each heading is my mapping, not the authors'.
 
-#### Compress the input: Token Factory, Google ([arXiv 2606.19635](https://arxiv.org/abs/2606.19635))
+### Compress the input: Token Factory, Google ([arXiv 2606.19635](https://arxiv.org/abs/2606.19635))
 
 - **What grows:** the prompt of a large recommendation model (PLUM, built on Gemini). Textualized as Semantic
   IDs plus dense features, each watch-history item costs 12 tokens in the ranking baseline (8 for the Semantic ID,
@@ -295,7 +292,7 @@ or I/O does not. The LLM-side analogue in each heading is my mapping, not the au
 - **LLM analogue:** gist tokens, and sequence-direction compression like DeepSeek-V4, which also merges every
   *K* positions into one entry.
 
-#### Quantize what you store: Dual-purpose Semantic IDs, YouTube / Google DeepMind ([arXiv 2607.24865](https://arxiv.org/abs/2607.24865))
+### Quantize what you store: Dual-purpose Semantic IDs, YouTube / Google DeepMind ([arXiv 2607.24865](https://arxiv.org/abs/2607.24865))
 
 - **What grows:** dense content embeddings attached to every item in a user's history. At 200 items × 256
   dimensions that is 51,200 floats (200 KB in FP32) per training example, logged, stored and joined across
@@ -309,7 +306,7 @@ or I/O does not. The LLM-side analogue in each heading is my mapping, not the au
   +0.06% to +0.09% sitewide.
 - **LLM analogue:** KV quantization — store compact codes and reconstruct on demand.
 
-#### Evict under a fixed budget: MPZCH, Meta ([arXiv 2602.17050](https://arxiv.org/abs/2602.17050))
+### Evict under a fixed budget: MPZCH, Meta ([arXiv 2602.17050](https://arxiv.org/abs/2602.17050))
 
 - **What grows:** the ID space of embedding tables, which can reach tens of billions of rows. Tables cannot grow
   indefinitely, so IDs are hashed into a fixed-size table, and colliding IDs share a row.
