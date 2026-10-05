@@ -221,54 +221,52 @@ beyond that ([`model.py`](https://github.com/vllm-project/vllm/blob/main/vllm/co
 | ② Is the accuracy cost acceptable? | Quantization and input compression are all lossy | Evaluate offline on your own task |
 | ③ Is there transfer bandwidth? | Offload depends on PCIe / network bandwidth | Offload only cold data, or quantize instead |
 
-## 5. Public cases
+## 5. Public cases, by the decision they inform
 
-Each case links to its source; numbers are as reported there.
+Each case answers one question you will face in Sections 2 and 4. Numbers are as reported in the linked sources.
 
-### Concurrency collapses with context: RetroInfer ([arXiv 2505.02922](https://arxiv.org/abs/2505.02922), §2)
+### "Is my ceiling estimate realistic, and will freeing capacity be enough?" — RetroInfer ([arXiv 2505.02922](https://arxiv.org/abs/2505.02922), §2)
 
 - **Setting:** A100 80GB, Llama3-8B-1048K, 128K context.
 - **Observation:** maximum batch size 4; beyond 3, throughput gains become marginal because memory bandwidth saturates.
-- **Lesson:** this matches Step 1's arithmetic, and shows capacity and bandwidth limits arriving almost together (Step 4).
+- **Use it when:** checking Step 1 and Step 4. The capacity ceiling matches the per-token arithmetic, but bandwidth
+  saturates one request earlier — so after freeing capacity, check `DRAMA` before expecting throughput to follow.
 
-### The model shrinks KV; the server must cash it in: DeepSeek-V4 on vLLM ([blog](https://vllm.ai/blog/2026-04-24-deepseek-v4), [report](https://arxiv.org/abs/2606.19348))
+### "Will a model with smaller KV solve it?" — DeepSeek-V4 on vLLM ([blog](https://vllm.ai/blog/2026-04-24-deepseek-v4), [report](https://arxiv.org/abs/2606.19348)) and Together AI ([blog](https://www.together.ai/blog/serving-deepseek-v4-why-million-token-context-is-an-inference-systems-problem))
 
-- **Model side:** KV is compressed along the sequence. *c4a* merges 8 tokens into one entry with stride 4
-  (~1/4); *c128a* merges 128 tokens with stride 128 (~1/128). A 128-token sliding window over uncompressed
-  tokens keeps local information.
-- **Size:** at 1M context with BF16 KV, vLLM estimates **9.62 GiB per sequence, about 8.7× smaller than the
-  83.9 GiB** of a 61-layer DeepSeek-V3.2-style stack. In deployment, FP8 attention cache and an FP4 indexer cache
-  halve it again. The report puts V4-Pro at 10% and V4-Flash at 7% of V3.2's KV cache at 1M tokens.
-- **Server side:** cache kinds with different compression ratios have different page sizes, and separate pools
-  would fragment. vLLM fixes every compressed layer's logical block at 256 native token positions and fits the
-  five-way cache stack into three page sizes, each backed by one shared pool.
-- **Lesson:** a smaller KV in the model is potential; the engine's KV management decides how much of it is realized.
+- **The model's part:** KV is compressed along the sequence. *c4a* merges 8 tokens into one entry with stride 4
+  (~1/4); *c128a* merges 128 tokens with stride 128 (~1/128); a 128-token sliding window keeps local information.
+  At 1M context with BF16 KV, vLLM estimates **9.62 GiB per sequence, about 8.7× smaller than the 83.9 GiB** of a
+  61-layer DeepSeek-V3.2-style stack. The report puts V4-Pro at 10% and V4-Flash at 7% of V3.2's KV cache at 1M tokens.
+- **The engine's part (vLLM):** cache kinds with different compression ratios have different page sizes, and
+  separate pools would fragment. vLLM fixes every compressed layer's logical block at 256 native token positions
+  and fits the five-way cache stack into three page sizes, each backed by one shared pool.
+- **The engine's part (Together AI):** their initial V4 path stored the full sliding-window state, about 3.8 KB
+  per token against 3.4 KB on their V3 path. Keeping only the sliding-window states most likely to be reused raised
+  total KV capacity on one NVIDIA HGX B200 node from roughly **1.2M to 3.7M tokens**, with the model unchanged.
+- **Use it when:** choosing a model (Section 4B, item 3). A smaller KV on paper is potential; how much you get
+  depends on how the engine stores, recomputes and evicts the different cache types. Judge it by the KV capacity
+  your engine version actually reports (`X` in Step 1), not by the paper's ratio.
 
-### Same model, three times the capacity: Together AI ([blog](https://www.together.ai/blog/serving-deepseek-v4-why-million-token-context-is-an-inference-systems-problem))
-
-- **Problem:** the initial V4 path stored the full sliding-window state, about 3.8 KB per token against 3.4 KB
-  on their V3 path.
-- **Fix:** keep only the sliding-window states most likely to be reused.
-- **Result:** total KV capacity on one NVIDIA HGX B200 node went from roughly **1.2M to 3.7M tokens**, with the
-  model unchanged.
-- **Lesson:** in their words, realized capacity depends on how the engine stores, recomputes and evicts the
-  different cache types.
-
-### Quantize the KV: NVFP4 KV cache ([NVIDIA blog](https://developer.nvidia.com/blog/optimizing-inference-for-long-context-and-large-batch-sizes-with-nvfp4-kv-cache/))
+### "How much does quantizing the KV buy, and what must I evaluate?" — NVFP4 KV cache ([NVIDIA blog](https://developer.nvidia.com/blog/optimizing-inference-for-long-context-and-large-batch-sizes-with-nvfp4-kv-cache/))
 
 - **Mechanism:** KV stored in 4-bit, dequantized to FP8 before attention; new K and V are quantized on append.
 - **Result:** up to 50% less memory than FP8 KV, effectively doubling the context budget; under 1% accuracy
   loss on LiveCodeBench, MMLU-PRO, MBPP and RULER 64K; up to 3× better TTFT and 20% higher cache-hit rate
   (Qwen3-Coder-480B-A35B), because the same memory holds more reusable KV.
+- **Use it when:** FP8 KV is already on (Section 4B, item 0) and the cache is still full. The next halving is
+  available, and the evaluation should include a long-context benchmark, as NVIDIA's did, not only short tasks.
 
-### Sparse attention moves the bottleneck to capacity: SparseServe ([arXiv 2509.24626](https://arxiv.org/abs/2509.24626))
+### "Will sparse attention free capacity?" — SparseServe ([arXiv 2509.24626](https://arxiv.org/abs/2509.24626))
 
 - **Problem:** dynamic sparse attention reads only selected KV blocks each step, so the bottleneck shifts
   from HBM bandwidth to HBM capacity — unselected KV must still stay in HBM, limiting batch size.
 - **Fix:** an HBM–DRAM hierarchy. Moving small KV blocks with `cudaMemcpy` reaches under 4 GB/s on an A100 40GB
   (PCIe Gen4 D2H peak: 32 GB/s), so a fused GPU-direct loading kernel (FlashH2D) brings it above 20 GB/s.
 - **Result:** built on vLLM; up to **9.26× lower mean TTFT** and **3.14× higher token throughput** than vanilla vLLM.
-- **Lesson:** saving bandwidth is not saving capacity. The two have to be counted separately.
+- **Use it when:** sparse attention is proposed as the fix for a full cache. On its own it saves bandwidth, not
+  capacity; it only helps capacity when paired with moving unselected KV off the GPU, and then the transfer path
+  becomes the problem to solve.
 
 ## 6. The same problem outside LLM serving
 
@@ -329,11 +327,6 @@ or I/O does not. The LLM-side analogue in each heading is my mapping, not the au
 - **Caveat:** when the table is full, the cost is collisions and degraded quality, not rejected requests or OOM.
   The shape matches the KV-cache problem; the failure mode does not.
 
-## Takeaway
-
-> When the KV cache is full but few requests are running, the problem is the size of each request, not their number — shrink or move the KV, don't add replicas.
-{: .prompt-tip }
-
 ## References
 
 **Papers**
@@ -360,9 +353,7 @@ or I/O does not. The LLM-side analogue in each heading is my mapping, not the au
 - Whyte-Gray, Bathusha, Goin and Kamra (Red Hat), [5 steps to triage vLLM performance](https://developers.redhat.com/articles/2026/03/09/5-steps-triage-vllm-performance) (2026)
 
 **Source code and issues**
-- vLLM: [`metrics/loggers.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/metrics/loggers.py), [`metrics/stats.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/metrics/stats.py), [`core/block_pool.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py), [`core/kv_cache_utils.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py), [`config/cache.py`](https://github.com/vllm-project/vllm/blob/main/vllm/config/cache.py), [`config/model.py`](https://github.com/vllm-project/vllm/blob/main/vllm/config/model.py), [`core/sched/scheduler.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py)
-- SGLang: [`arg_groups/fields/model.py`](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/arg_groups/fields/model.py)
-- [vllm#56992](https://github.com/vllm-project/vllm/issues/56992) compressed-tensors silently enables FP8 KV cache, far slower than BF16 on RDNA3
+- vLLM: [`metrics/loggers.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/metrics/loggers.py), [`metrics/stats.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/metrics/stats.py), [`core/block_pool.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py), [`core/kv_cache_utils.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py), [`config/cache.py`](https://github.com/vllm-project/vllm/blob/main/vllm/config/cache.py), [`config/model.py`](https://github.com/vllm-project/vllm/blob/main/vllm/config/model.py)
 - [LMCache](https://github.com/LMCache/LMCache)
 
 **RecSys 2026**
