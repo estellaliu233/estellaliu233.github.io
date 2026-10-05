@@ -227,19 +227,21 @@ Each case answers one question you will face in Sections 2 and 4. Numbers are as
 
 ### "Is my ceiling estimate realistic, and will freeing capacity be enough?" — RetroInfer ([arXiv 2505.02922](https://arxiv.org/abs/2505.02922), §2)
 
-- **Setting:** A100 80GB, Llama3-8B-1048K, 128K context.
-- **Observation:** maximum batch size 4; beyond 3, throughput gains become marginal because memory bandwidth saturates.
-- **Use it when:** checking Step 1 and Step 4. The capacity ceiling matches the per-token arithmetic, but bandwidth
-  saturates one request earlier — so after freeing capacity, check `DRAMA` before expecting throughput to follow.
+- **Setting:** A100 80GB, Llama3-8B (the 1048K-context variant used throughout the paper's analysis), 128K context.
+- **Observation:** maximum batch size 4 — beyond that, out of memory; and beyond 3, throughput gains become marginal because memory bandwidth saturates.
+- **Use it when:** checking Step 1 and Step 4. The measured ceiling (4) is in line with the per-token arithmetic (Section 1's
+  illustration gives 3), but bandwidth saturates one request earlier — so after freeing capacity, check `DRAMA` before expecting throughput to follow.
 
 ### "Will a model with smaller KV solve it?" — DeepSeek-V4 on vLLM ([blog](https://vllm.ai/blog/2026-04-24-deepseek-v4), [report](https://arxiv.org/abs/2606.19348)) and Together AI ([blog](https://www.together.ai/blog/serving-deepseek-v4-why-million-token-context-is-an-inference-systems-problem))
 
 - **The model's part:** KV is compressed along the sequence. *c4a* merges 8 tokens into one entry with stride 4
   (~1/4); *c128a* merges 128 tokens with stride 128 (~1/128); a 128-token sliding window keeps local information.
   At 1M context with BF16 KV, vLLM estimates **9.62 GiB per sequence, about 8.7× smaller than the 83.9 GiB** of a
-  61-layer DeepSeek-V3.2-style stack. The report puts V4-Pro at 10% and V4-Flash at 7% of V3.2's KV cache at 1M tokens.
-- **The engine's part (vLLM):** cache kinds with different compression ratios have different page sizes, and
-  separate pools would fragment. vLLM fixes every compressed layer's logical block at 256 native token positions
+  61-layer DeepSeek-V3.2-style stack. The report estimates V4-Pro at 10% and V4-Flash at 7% of V3.2's KV cache at
+  1M tokens, crediting the hybrid attention together with storage-precision optimizations — so it is not directly
+  comparable to vLLM's BF16-only number.
+- **The engine's part (vLLM):** V4 keeps several kinds of cache (compressed KV, sliding-window KV, indexer KV and
+  compressor state) with different page sizes, and separate pools would fragment. vLLM fixes every compressed layer's logical block at 256 native token positions
   and fits the five-way cache stack into three page sizes, each backed by one shared pool.
 - **The engine's part (Together AI):** their initial V4 path stored the full sliding-window state, about 3.8 KB
   per token against 3.4 KB on their V3 path. Keeping only the sliding-window states most likely to be reused raised
@@ -254,8 +256,9 @@ Each case answers one question you will face in Sections 2 and 4. Numbers are as
 - **Result:** up to 50% less memory than FP8 KV, effectively doubling the context budget; under 1% accuracy
   loss on LiveCodeBench, MMLU-PRO, MBPP and RULER 64K; up to 3× better TTFT and 20% higher cache-hit rate
   (Qwen3-Coder-480B-A35B), because the same memory holds more reusable KV.
-- **Use it when:** FP8 KV is already on (Section 4B, item 0) and the cache is still full. The next halving is
-  available, and the evaluation should include a long-context benchmark, as NVIDIA's did, not only short tasks.
+- **Use it when:** FP8 KV is already on (Section 4B, item 0) and the cache is still full, on NVIDIA Blackwell GPUs —
+  the format the blog describes targets Blackwell. The evaluation should include a long-context benchmark, as
+  NVIDIA's did (RULER 64K, on Qwen3-480B-A35B against BF16 and FP8), not only short tasks.
 
 ### "Will sparse attention free capacity?" — SparseServe ([arXiv 2509.24626](https://arxiv.org/abs/2509.24626))
 
@@ -291,8 +294,6 @@ or I/O does not. The LLM-side analogue in each heading is my mapping, not the au
   unique impressions +16.8%.
 - **LLM analogue:** gist tokens, and sequence-direction compression like DeepSeek-V4, which also merges every
   *K* positions into one entry.
-- **Caveat:** the motivation names memory footprint, but the reported gains are prompt length, training speed
-  and quality. The paper does not measure serving memory.
 
 #### Quantize what you store: Dual-purpose Semantic IDs, YouTube / Google DeepMind ([arXiv 2607.24865](https://arxiv.org/abs/2607.24865))
 
@@ -301,14 +302,12 @@ or I/O does not. The LLM-side analogue in each heading is my mapping, not the au
   billions of examples.
 - **How it fits:** each embedding is quantized into a *K*-token Semantic ID (*K* × log₂*V* bits instead of
   *d* × 32), typically 50–100× smaller. The same IDs act as a learned identity and are decoded back into an
-  approximate embedding inside the model graph, so dense vectors never need to be stored or moved.
+  approximate embedding inside the model graph, so dense vectors no longer have to be logged or joined.
 - **Result:** ingesting raw 64-dimensional embeddings cut training throughput by 28.2% (16.80 → 12.07 steps/s);
   decoding Semantic IDs recovered it to 15.41 steps/s, and a larger codebook raised Hit Rate@100 above the
   raw-embedding arm (0.2870 vs 0.2844). Deployed in YouTube ranking and retrieval, with online satisfied engagement
   +0.06% to +0.09% sitewide.
 - **LLM analogue:** KV quantization — store compact codes and reconstruct on demand.
-- **Caveat:** the bottleneck measured here is data I/O and training throughput, which is closer to the bandwidth
-  side than to GPU memory capacity.
 
 #### Evict under a fixed budget: MPZCH, Meta ([arXiv 2602.17050](https://arxiv.org/abs/2602.17050))
 
@@ -324,8 +323,6 @@ or I/O does not. The LLM-side analogue in each heading is my mapping, not the au
   got 0.83% more impressions.
 - **LLM analogue:** KV eviction under a fixed budget, and PagedAttention's block table — an indirection that
   decides who owns which slot.
-- **Caveat:** when the table is full, the cost is collisions and degraded quality, not rejected requests or OOM.
-  The shape matches the KV-cache problem; the failure mode does not.
 
 ## References
 
