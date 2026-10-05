@@ -3,7 +3,10 @@ title: "When One Request Fills the KV Cache: Diagnosing Long-Context Capacity Li
 date: 2026-10-04 10:00:00 -0700
 categories: [LLM Serving, KV Cache]
 tags: [ml-systems, serving, kv-cache, long-context, vllm, sglang, deepseek-v4]
-description: The KV cache grows linearly with context length while GPU memory is fixed. How to tell "each request is too big" apart from "too many requests", what operators can change without touching the engine, and five public cases.
+description: The KV cache grows linearly with context length while GPU memory is fixed. How to tell "each request is too big" apart from "too many requests", what operators can change without touching the engine, and public cases from LLM serving and generative recommendation.
+image:
+  path: /assets/img/posts/long-context-kv-capacity.png
+  alt: "Six-step diagnosis for long-context KV cache capacity limits: compute the ceiling, confirm it's full, too many or too long, check bandwidth, sweep context length, validate by ablation"
 ---
 
 **Symptom:** request rate is unchanged, yet throughput drops and short requests start missing their latency targets.
