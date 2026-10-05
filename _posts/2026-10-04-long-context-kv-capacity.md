@@ -273,9 +273,7 @@ Each case answers one question you will face in Sections 2 and 4. Numbers are as
 
 ## 6. The same problem outside LLM serving
 
-Cost that grows with the input against a fixed memory budget is an old problem.
-
-Three industry papers from RecSys 2026 run into the same pattern: something grows without bound, and memory
+Cost that grows with the input against a fixed memory budget is an old problem. Three industry papers from RecSys 2026 run into the same pattern: something grows without bound, and memory
 or I/O does not. The LLM-side analogue in each heading is my mapping, not the authors'.
 
 ### Compress the input: Token Factory, Google ([arXiv 2606.19635](https://arxiv.org/abs/2606.19635))
