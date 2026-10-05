@@ -103,7 +103,7 @@ KV full? (usage ≥ 0.9 sustained, and waiting or preemptions rising)
 │         └─ Few running  → check the length distribution
 │              ├─ More long requests     → long context (this note)
 │              └─ Requests are not long  → KV pool too small (configuration)
-└─ No → not a capacity problem: admission caps, long prefills eating the per-step token budget, bandwidth, host overhead
+└─ No → not a capacity problem: admission caps, bandwidth, host overhead
 ```
 
 Two signals do most of the work:
@@ -112,19 +112,21 @@ Two signals do most of the work:
 2. **Length distribution and throughput moving together** (`vllm:request_prompt_tokens`, `vllm:request_generation_tokens`):
    if the shift in long requests coincides with the throughput drop, it is context length; if throughput tracks QPS instead, it is request count.
 
-Watch **generation-token throughput** (`vllm:generation_tokens` rate) or completed requests per second, not total
-token throughput — when prompts get longer, total tokens processed can actually go up.
+When p99 rises, separate two paths. They apply to any request; to tell interference from expected slowness, look at short requests.
 
-For short-request p99, separate two paths:
-
-| Short requests are... | Evidence |
+| Requests are... | Evidence |
 |---|---|
-| Blocked from entering | Cache full + short requests' `vllm:request_queue_time_seconds` rises |
+| Blocked from entering | Cache full + `vllm:request_queue_time_seconds` rises |
 | Preempted after entering | Cache full + `vllm:num_preemptions` rising + longer `request_prefill_time_seconds` / `request_decode_time_seconds` |
 
 `request_queue_time` only measures the first wait, from first queued to first scheduled; time spent re-queued
 after a preemption lands in the prefill or decode interval instead
 ([`stats.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/metrics/stats.py)).
+
+These histograms are labeled only by model and engine, not by request length, so isolating short requests needs
+per-request data (client-side results or request logs). In vLLM's default FCFS policy, the request preempted is
+the last one in the running queue — the most recently scheduled — regardless of its length
+([`scheduler.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py)).
 
 ### Step 4 — Check whether bandwidth has also hit its ceiling
 
@@ -385,7 +387,7 @@ or I/O does not. The LLM-side analogue in each heading is my mapping, not the au
 - Whyte-Gray, Bathusha, Goin and Kamra (Red Hat), [5 steps to triage vLLM performance](https://developers.redhat.com/articles/2026/03/09/5-steps-triage-vllm-performance) (2026)
 
 **Source code and issues**
-- vLLM: [`metrics/loggers.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/metrics/loggers.py), [`metrics/stats.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/metrics/stats.py), [`core/block_pool.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py), [`core/kv_cache_utils.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py), [`config/cache.py`](https://github.com/vllm-project/vllm/blob/main/vllm/config/cache.py), [`config/model.py`](https://github.com/vllm-project/vllm/blob/main/vllm/config/model.py)
+- vLLM: [`metrics/loggers.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/metrics/loggers.py), [`metrics/stats.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/metrics/stats.py), [`core/block_pool.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/block_pool.py), [`core/kv_cache_utils.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_utils.py), [`config/cache.py`](https://github.com/vllm-project/vllm/blob/main/vllm/config/cache.py), [`config/model.py`](https://github.com/vllm-project/vllm/blob/main/vllm/config/model.py), [`core/sched/scheduler.py`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py)
 - SGLang: [`arg_groups/fields/model.py`](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/arg_groups/fields/model.py)
 - [vllm#56992](https://github.com/vllm-project/vllm/issues/56992) compressed-tensors silently enables FP8 KV cache, far slower than BF16 on RDNA3
 - [LMCache](https://github.com/LMCache/LMCache)
