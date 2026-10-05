@@ -69,7 +69,7 @@ expected running ceiling ≈ X ÷ long-tail context length in real traffic (inpu
 | What Step 1 shows | What it means | What to check next |
 |---|---|---|
 | Ceiling is low (single digits) and close to the observed running count | Consistent with long context | Confirm the cache is actually full (Step 2), then check bandwidth (Step 4) |
-| Ceiling is high, but few requests run and the cache is full | The ceiling's assumptions are wrong | Re-measure lengths including output tokens; re-read `X` from the current startup log |
+| Ceiling is high, but few requests run and the cache is full | Running requests are larger than assumed, or `X` is smaller | Compute their actual size: usage × `X` ÷ running. Much larger than assumed → you missed output tokens, or long requests stay longer and dominate the running set (usually still this case). Close to assumed → re-read `X` |
 | Ceiling is high, few requests run, cache **not** full | Not a KV problem | Admission caps (`max_num_seqs`, token budget), long prefills taking most of each step's token budget (time, not memory), host overhead |
 | Ceiling < 1 | The longest requests cannot fit at all | A deployment issue: startup fails or `max_model_len` rejects them |
 
