@@ -81,10 +81,6 @@ There is a user-specified mode and an **autopilot** mode. It runs on NVIDIA and 
 | **Advantages** | You make fewer step-by-step decisions. Roles are clear, so the agent that sets the direction isn't also writing the code. Past wins are collected in one place and checked first. |
 | **Disadvantages** | It only serves TensorRT-LLM. There are more parts to understand and more agents to run, which likely costs more tokens. If you only need one task, such as a benchmark, a single skill is simpler. |
 
-The process is also still driven by an LLM following written instructions. Unlike GEAK, code doesn't enforce it.
-
-**How to try it:** clone the repo and start Claude Code inside it. Skills and agents are discovered automatically; type `/skills` and `/agents` to check what loaded. Then either ask in plain language ("optimize this workload to TPOT < X ms") or invoke a skill directly, for example `/perf-analysis`.
-
 ---
 
 ### 1.3 Cross-framework tools: BBuf
@@ -121,7 +117,7 @@ To search the PR history: `python3 scripts/query.py --framework vllm "qwen3 fuse
 
 [AMD GEAK](https://github.com/AMD-AGI/GEAK) (`e2e_workflow`) runs on AMD Instinct/Radeon + ROCm 6+ and supports vLLM, SGLang, and ATOM. Further reading: [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html), [original GEAK paper (2025, Triton kernel agent)](https://arxiv.org/abs/2507.23194), and its companion [Magpie skill](https://github.com/AMD-AGI/Magpie/blob/main/skills/magpie/SKILL.md) (benchmarking and analysis on AMD, with a 9-step loop and explicit "don't claim success unless..." rules).
 
-GEAK runs inside Claude Code, but **Claude doesn't drive it. A deterministic JavaScript workflow does.** Stage order, budgets, stop conditions, and gates are all code. LLM roles step in for judgment calls: which kernel to attack, how to rewrite it, whether a route is worth it.
+GEAK runs inside Claude Code, but **Claude doesn't drive it. A deterministic JavaScript workflow does.** Stage order, budgets, stop conditions, and gates are all code. LLM roles step in for judgment calls: which kernel to attack, how to rewrite it, whether a route is worth it. This is the main difference from TensorRT-LLM, whose process still relies on an LLM following written instructions rather than being enforced by code.
 
 Every change must pass three gates, which are worth copying even if you never use GEAK:
 
