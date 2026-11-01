@@ -105,14 +105,17 @@ The best practitioner write-up I found is by BBuf: [LMSYS: Agent-Assisted SGLang
 
 Other write-ups: [intro (Zhihu)](https://zhuanlan.zhihu.com/p/2025216177463370060), [v0.1.0 (Zhihu)](https://zhuanlan.zhihu.com/p/2042740770457772060).
 
-**How to install:**
-```text
-/plugin marketplace add BBuf/AI-Infra-Auto-Driven-SKILLS
-/plugin install ai-infra-auto-driven-skills@ai-infra-auto-driven-skills
-```
-To search the PR history: `python3 scripts/query.py --framework vllm "qwen3 fused qk norm"`.
+**What happened to the SOTA loop.** BBuf used to ship the loop described in the LMSYS post as the `sglang-sota-humanize-loop` skill, but [PR #98](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/pull/98) removed it in October 2026. I read this as the opposite of AMD's direction: BBuf moved the process from a skill into a prompt, while GEAK moved it into code.
 
-**What happened to the SOTA loop.** The LMSYS post describes an SGLang SOTA Performance Loop built on Humanize/RLCR: fair benchmark, gap decision, profile, patch, revalidate. It existed as the `sglang-sota-humanize-loop` skill, but [PR #98](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/pull/98) removed it and its vLLM counterpart in October 2026, saying "the benchmark, profiler, kernel, and general agent workflows cover this work." What remains are Codex Goal prompts for [B200](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-b200-codex-goal-prompts.md) and [H200](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md), which write the process directly into a persistent goal. So the loop is now a pattern you assemble rather than a tool you install. I read this as the opposite of GEAK's direction: BBuf moved the process from a skill into a prompt, while GEAK moved it into code.
+**How to run it end to end.** Write the whole process into one persistent `/goal`, using the [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md) as a full example:
+
+1. Fix the model, hardware, workload, and SLA.
+2. Compare frameworks with `llm-serving-auto-benchmark`.
+3. If SGLang is behind, explain the gap with `llm-torch-profiler-analysis` and `llm-pipeline-analysis`.
+4. Patch only the code paths the evidence supports.
+5. Re-run the same workload, then repeat from step 3 until SGLang catches up or the goal's stop conditions are met.
+
+You set the goal and review the result. Inside the goal, the agent decides each next step.
 
 ---
 
