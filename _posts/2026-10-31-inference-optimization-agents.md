@@ -99,13 +99,13 @@ The coordinator covers two modes:
 | `llm-pipeline-analysis` | Inspects torch profiler traces at the forward-pass, layer, and kernel level. |
 | `llm-serving-capacity-planner` | Explains startup memory, KV budget, concurrency, and OOM causes from logs. |
 | `model-compute-simulation` | Estimates operator shapes, FLOPs, and MFU, and maps kernels back to ops. |
-| PR history | A searchable history of optimization PRs for 118 models (44 in vLLM, 45 in SGLang, ...). |
+| PR history | A searchable knowledge base of 118 model-family dossiers built from optimization PRs (45 for SGLang, 44 for vLLM, ...). |
 
 BBuf also wrote an excellent practitioner's guide: [LMSYS: Agent-Assisted SGLang Development](https://www.lmsys.org/blog/2026-07-02-agent-assisted-sglang-development/) ([Chinese](https://zhuanlan.zhihu.com/p/2056522862169678247)). It also covers SGLang's in-repo skills and KDA-Pilot.
 
 Other write-ups: [intro (Zhihu)](https://zhuanlan.zhihu.com/p/2025216177463370060), [v0.1.0 (Zhihu)](https://zhuanlan.zhihu.com/p/2042740770457772060).
 
-BBuf used to ship the loop described in the LMSYS post as the `sglang-sota-humanize-loop` skill, but [PR #98](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/pull/98) removed it in October 2026. I read this as the opposite of AMD's direction: BBuf moved the process from a skill into a prompt, while GEAK moved it into code.
+The LMSYS post also describes the SOTA loop, where SOTA means the best reproducible result under fixed conditions. It compares frameworks, explains the gap, patches SGLang, and re-tests. BBuf used to ship it as the `sglang-sota-humanize-loop` skill, but [PR #98](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/pull/98) removed it in October 2026. I read this as the opposite of AMD's direction: BBuf moved the process from a skill into a prompt, while GEAK moved it into code.
 
 **How to run it end to end.** Write the whole process into one persistent `/goal`. Here is a shortened version of the [Nemotron-3-Nano prompt](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md#L42-L71), in my own words. The original has more than 20 rules and is tuned to the author's machines:
 
@@ -136,7 +136,7 @@ Rules:
 4. If the cause is one hot kernel, it can become a KDA-Pilot task. The agent optimizes the kernel in isolation, then the change is integrated back into SGLang.
 5. The agent re-runs the same benchmark and accuracy checks, then decides what to try next.
 
-[Kernel Design Agents](https://github.com/NVlabs/kda) (KDA) is an agent workflow for writing high-performance CUDA kernels, and it won the MLSys 2026 FlashInfer Kernel Contest. [KDA-Pilot](https://github.com/BBuf/KDA-Pilot) applies it to real SGLang kernels, with frozen shapes, matching interfaces for the old and new versions, and correctness gates. BBuf's prompts don't mention KDA-Pilot. Step 4 is my suggestion: if you want the agent to use it, name it in your goal.
+[Kernel Design Agents](https://github.com/NVlabs/kda) (KDA) is an agent workflow for writing high-performance CUDA kernels, and it won the MLSys 2026 FlashInfer Kernel Contest. [KDA-Pilot](https://github.com/BBuf/KDA-Pilot) applies it to real SGLang kernels, with frozen shapes, matching interfaces for the old and new versions, and correctness gates. BBuf's prompts name neither KDA-Pilot nor SGLang's in-repo skills. Steps 3 and 4 are my suggestion: if you want the agent to use them, name them in your goal.
 
 You set the goal and review the result. Inside the goal, the agent decides each next step.
 
@@ -214,52 +214,19 @@ BBuf's [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/m
 
 **Cross-framework tools**
 - BBuf, [AI-Infra-Auto-Driven-SKILLS](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS); write-ups: [intro (Zhihu)](https://zhuanlan.zhihu.com/p/2025216177463370060), [v0.1.0 (Zhihu)](https://zhuanlan.zhihu.com/p/2042740770457772060)
-- BBuf, [PR #98: removal of the SOTA loop skills](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/pull/98) (2026); Codex Goal prompts for [B200](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-b200-codex-goal-prompts.md) and [H200](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md)
+- BBuf, [PR #98: removal of the SOTA loop skills](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/pull/98) (2026); [H200 Codex Goal prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md)
 
 **End-to-end workflows**
 - AMD, [GEAK v4: From Faster Kernels to Faster Workloads](https://www.amd.com/en/developer/resources/technical-articles/2026/geak-v4.html) (2026); [Chinese version](https://zhuanlan.zhihu.com/p/2076730119767450356)
 - AMD, [GEAK](https://github.com/AMD-AGI/GEAK): [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html), issues [#402](https://github.com/AMD-AGI/GEAK/issues/402) and [#492](https://github.com/AMD-AGI/GEAK/issues/492)
 - AMD, [Magpie skill](https://github.com/AMD-AGI/Magpie/blob/main/skills/magpie/SKILL.md)
 
-**Config tuning**
-- [vllm-autotune](https://github.com/SummerTea/vllm-autotune)
-- NVIDIA Dynamo, [AIConfigurator](https://github.com/ai-dynamo/aiconfigurator), [AISimulate](https://github.com/ai-dynamo/aisimulate), [paper](https://arxiv.org/abs/2601.06288), [Dynamo 1.0 blog](https://developer.nvidia.com/blog/nvidia-dynamo-1-production-ready/)
-
 **Kernel agents**
 - [Kernel Design Agents](https://github.com/NVlabs/kda)
 - BBuf, [KDA-Pilot](https://github.com/BBuf/KDA-Pilot)
-- Meta PyTorch, [KernelAgent](https://github.com/meta-pytorch/KernelAgent), [blog](https://pytorch.org/blog/kernelagent-hardware-guided-gpu-kernel-optimization-via-multi-agent-orchestration/)
-- [Kernel Forge](https://github.com/TheJoshBrod/KernelForge), [paper](https://arxiv.org/abs/2607.24762)
-- Intel Labs, [Triton8](https://github.com/IntelLabs/Triton8)
-- **[abstract only]** [Astra](https://arxiv.org/abs/2509.07506), [KernelOPT](https://arxiv.org/abs/2609.30059), [FACT](https://arxiv.org/abs/2604.26666), [KernelPro](https://arxiv.org/abs/2606.26453)
-
-**Kernel write-ups**
-- [Harness Engineering for LLM-Driven GPU Kernel Generation](https://arxiv.org/abs/2607.17979) (2026)
-- Cursor, [Multi-agent kernel optimization with NVIDIA](https://cursor.com/blog/multi-agent-kernels) **[abstract only]**
-- blopig, [Writing Triton kernels with Claude](https://www.blopig.com/blog/2026/01/democratising-the-dark-arts-writing-cuda-kernels-with-claude/) (2026)
-- NVIDIA, [Kernel generation with DeepSeek-R1 and inference-time scaling](https://developer.nvidia.com/blog/automating-gpu-kernel-generation-with-deepseek-r1-and-inference-time-scaling/)
-
-**RL-trained kernel models**
-- [CUDA Agent](https://arxiv.org/abs/2602.24286)
-- [Kevin](https://arxiv.org/abs/2507.11948)
-
-**Skill-building guides**
-- Hugging Face, [Custom Kernels from Codex and Claude](https://huggingface.co/blog/custom-cuda-kernels-agent-skills); [tensormux/kernel-skills](https://github.com/tensormux/kernel-skills)
-- Hugging Face, [upskill](https://huggingface.co/blog/upskill)
-
-**Benchmarks for agents**
-- [KernelBench](https://github.com/ScalingIntelligence/KernelBench)
-- [InferenceBench](https://arxiv.org/abs/2607.20468) **[abstract only]**
-- [SWE-Serve](https://arxiv.org/abs/2609.26777) **[abstract only]**
-- [Production-kernel benchmark](https://arxiv.org/abs/2607.14541) **[abstract only]**
 
 **Long-running goals**
 - OpenAI Cookbook, [Using Goals in Codex](https://github.com/openai/openai-cookbook/blob/main/examples/codex/using_goals_in_codex.ipynb)
 - Anthropic, [Keep Claude working toward a goal](https://code.claude.com/docs/en/goal)
-
-**Survey and lists**
-- [Survey](https://arxiv.org/abs/2601.15727)
-- [awesome-LLM-driven-kernel-generation](https://github.com/flagos-ai/awesome-LLM-driven-kernel-generation)
-- [Awesome-GPU-Kernel-Optimization](https://github.com/luckily268/Awesome-GPU-Kernel-Optimization)
 
 Numbers in this note are quoted from the linked sources; I haven't reproduced them.
