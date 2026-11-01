@@ -148,7 +148,7 @@ You give it a serving backend, model weights, and a target workload, and it work
 
 [AMD GEAK v4](https://www.amd.com/en/developer/resources/technical-articles/2026/geak-v4.html) ([Chinese](https://zhuanlan.zhihu.com/p/2076730119767450356), [repo](https://github.com/AMD-AGI/GEAK)) runs on AMD Instinct/Radeon + ROCm 6+ and supports vLLM, SGLang, and ATOM. Further reading: [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html) and its companion [Magpie skill](https://github.com/AMD-AGI/Magpie/blob/main/skills/magpie/SKILL.md) (benchmarking and analysis on AMD, with a 9-step loop and explicit "don't claim success unless..." rules).
 
-GEAK runs inside Claude Code, but **Claude doesn't drive it. A deterministic JavaScript workflow does.** Stage order, budgets, stop conditions, and gates are all code. LLM roles step in for judgment calls: which kernel to attack, how to rewrite it, whether a route is worth it. GEAK has specialist roles too, so the main difference from TensorRT-LLM is enforcement: TensorRT-LLM's process still relies on an LLM following written instructions, while GEAK's is enforced by code.
+GEAK runs inside Claude Code, but Claude doesn't drive it. **A deterministic JavaScript workflow does.** Stage order, budgets, stop conditions, and gates are all code. LLM roles step in for judgment calls: which kernel to attack, how to rewrite it, whether a route is worth it. GEAK has specialist roles too, so the main difference from TensorRT-LLM is enforcement: TensorRT-LLM's process still relies on an LLM following written instructions, while GEAK's is enforced by code.
 
 It works at two levels. `e2e_workflow` handles the server, profiling, and end-to-end checks, and it calls `kernel_workflow` when a kernel is worth rewriting. A separate Verify Engineer then re-measures each claimed speedup in a clean workspace, so no agent's self-reported result counts. Skills and past lessons can suggest candidates, but they can't replace measurement.
 
@@ -158,12 +158,14 @@ Every change must pass three gates, which are worth copying even if you never us
 2. **Clears the noise band:** in back-to-back A/B runs, the gain exceeds the measured noise.
 3. **Quality unchanged:** greedy outputs match, and low-precision kernels pass a task-accuracy gate.
 
-**How to try it:** you need AMD GPUs. The workflow spawns many sub-agents and runs commands on the box, and its README asks you to auto-approve Claude Code permissions, so use a dedicated machine. Then ask for a run in plain language:
+**How to try it:** you need AMD GPUs. Ask for a run in plain language:
 ```text
 use path_to_GEAK/e2e_workflow to optimize inference for /models/Qwen3.5-27B-FP8, sglang, ISL/OSL=1024, conc=64, gpus 0,1,2,3
 ```
 
-AMD reports throughput gains of +60% on Qwen3.5-27B-FP8, +96% on Qwen3-14B-FP8, and +42.2% on MiniMax-M3-MXFP8, on MI300X-class systems. It describes these as workload-specific, not guarantees.
+AMD reports throughput gains of +60% on Qwen3.5-27B-FP8, +96% on Qwen3-14B-FP8, and +42.2% on MiniMax-M3-MXFP8, on MI300X-class systems. I read GEAK v4 as more enterprise-oriented than the other layers: AMD pitches it as a way for customers to get faster, cheaper inference on AMD GPUs without building a dedicated kernel engineering team.
+
+I didn't find independent hands-on reviews of GEAK v4. Its GitHub issues show that a run can be long and costly ([one reported run](https://github.com/AMD-AGI/GEAK/issues/402) took 11 hours and cost $237 with no usable result), and that [a run that stops early can look like one that found no gain](https://github.com/AMD-AGI/GEAK/issues/492). So I'd watch cost and check why a run ended, and you may also need to decide which skills to enable.
 
 ---
 
@@ -216,7 +218,7 @@ BBuf's [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/m
 
 **End-to-end workflows**
 - AMD, [GEAK v4: From Faster Kernels to Faster Workloads](https://www.amd.com/en/developer/resources/technical-articles/2026/geak-v4.html) (2026); [Chinese version](https://zhuanlan.zhihu.com/p/2076730119767450356)
-- AMD, [GEAK](https://github.com/AMD-AGI/GEAK): [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html)
+- AMD, [GEAK](https://github.com/AMD-AGI/GEAK): [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html), issues [#402](https://github.com/AMD-AGI/GEAK/issues/402) and [#492](https://github.com/AMD-AGI/GEAK/issues/492)
 - AMD, [Magpie skill](https://github.com/AMD-AGI/Magpie/blob/main/skills/magpie/SKILL.md)
 
 **Config tuning**
