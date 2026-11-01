@@ -63,7 +63,7 @@ Use these examples and this checklist when you use or modify a skill. The LMSYS 
 
 ### 1.2 Collaboration process: TensorRT-LLM
 
-I haven't used TensorRT-LLM myself, so this section comes from reading its repo. Even so, the difference from vLLM and SGLang is clear: TensorRT-LLM is more automated. **vLLM and SGLang provide tools. TensorRT-LLM also provides a process for organizing agents around those tools.** Its [`.claude/`](https://github.com/NVIDIA/TensorRT-LLM/tree/main/.claude) directory ships 32 skills and 11 sub-agents, and four parts make up the process:
+I'm not a heavy TensorRT-LLM user, but its differences from vLLM and SGLang stand out: TensorRT-LLM is more automated. **vLLM and SGLang provide tools. TensorRT-LLM also provides a process for organizing agents around those tools.** Its [`.claude/`](https://github.com/NVIDIA/TensorRT-LLM/tree/main/.claude) directory ships 32 skills and 11 sub-agents, and four parts make up the process:
 
 | Part | Role |
 |---|---|
@@ -72,14 +72,19 @@ I haven't used TensorRT-LLM myself, so this section comes from reading its repo.
 | **[Casebook](https://github.com/NVIDIA/TensorRT-LLM/blob/main/.claude/skills/perf-optimization-casebook/SKILL.md)** | Records how similar problems were solved, and gets checked before any change |
 | **Loop** | Change → profile → analyze → change again |
 
-There is a user-specified mode and an **autopilot** mode. It runs on NVIDIA and serves **TensorRT-LLM only**.
+The coordinator covers two modes:
 
-**Compared with vLLM and SGLang,** this is how I read the trade-offs. I haven't tested them.
+| | User-specified mode | Autopilot mode |
+|---|---|---|
+| **What you say** | "Apply CUDA Graph to my model" | A target metric and value, such as a TPOT goal |
+| **Scope of changes** | One optimization | Several optimizations, applied one after another |
+
+**Compared with vLLM and SGLang,** this is how I read the trade-offs.
 
 | | Details |
 |---|---|
 | **Advantages** | You make fewer step-by-step decisions. Roles are clear, so the agent that sets the direction isn't also writing the code. Past wins are collected in one place and checked first. |
-| **Disadvantages** | It only serves TensorRT-LLM. There are more parts to understand and more agents to run, which likely costs more tokens. If you only need one task, such as a benchmark, a single skill is simpler. |
+| **Disadvantages** | The report names the specialist used, what changed, and the before-and-after metrics, and you can test one specialist on its own, which may be easier than working through a skill hundreds of lines long. The hard part is the handoffs: changing one step can affect every task after it. So debugging and improving the whole process on your own can be harder than with vLLM or SGLang skills. |
 
 ---
 
