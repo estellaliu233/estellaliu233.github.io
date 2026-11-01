@@ -191,10 +191,6 @@ report why, or stop after 20 turns.
 
 `plan.md` and `gate_readonly.py` are files you'd write yourself. BBuf's [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md) are a full example, but they carry 20-plus rules tuned to the author's machines. Don't try to write that many up front: start with a handful, and add one each time a run goes wrong.
 
----
-
-*Next: a hands-on run with Qwen3-8B, and how I'd assemble a GEAK-style loop on NVIDIA.*
-
 ## References
 
 **Framework skills and collaboration processes**
