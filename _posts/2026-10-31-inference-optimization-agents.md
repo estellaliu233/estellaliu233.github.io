@@ -101,19 +101,42 @@ The coordinator covers two modes:
 | `model-compute-simulation` | Estimates operator shapes, FLOPs, and MFU, and maps kernels back to ops. |
 | PR history | A searchable history of optimization PRs for 118 models (44 in vLLM, 45 in SGLang, ...). |
 
-The best practitioner write-up I found is by BBuf: [LMSYS: Agent-Assisted SGLang Development](https://www.lmsys.org/blog/2026-07-02-agent-assisted-sglang-development/) ([Chinese](https://zhuanlan.zhihu.com/p/2056522862169678247)). It also covers SGLang's in-repo skills and KDA-Pilot.
+BBuf also wrote an excellent practitioner's guide: [LMSYS: Agent-Assisted SGLang Development](https://www.lmsys.org/blog/2026-07-02-agent-assisted-sglang-development/) ([Chinese](https://zhuanlan.zhihu.com/p/2056522862169678247)). It also covers SGLang's in-repo skills and KDA-Pilot.
 
 Other write-ups: [intro (Zhihu)](https://zhuanlan.zhihu.com/p/2025216177463370060), [v0.1.0 (Zhihu)](https://zhuanlan.zhihu.com/p/2042740770457772060).
 
-**What happened to the SOTA loop.** BBuf used to ship the loop described in the LMSYS post as the `sglang-sota-humanize-loop` skill, but [PR #98](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/pull/98) removed it in October 2026. I read this as the opposite of AMD's direction: BBuf moved the process from a skill into a prompt, while GEAK moved it into code.
+BBuf used to ship the loop described in the LMSYS post as the `sglang-sota-humanize-loop` skill, but [PR #98](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/pull/98) removed it in October 2026. I read this as the opposite of AMD's direction: BBuf moved the process from a skill into a prompt, while GEAK moved it into code.
 
-**How to run it end to end.** Write the whole process into one persistent `/goal`, using the [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md) as a full example:
+**How to run it end to end.** Write the whole process into one persistent `/goal`. Here is a shortened version of the [Nemotron-3-Nano prompt](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md#L42-L71), in my own words. The original has more than 20 rules and is tuned to the author's machines:
 
-1. Fix the model, hardware, workload, and SLA.
-2. Compare frameworks with `llm-serving-auto-benchmark`.
-3. If SGLang is behind, explain the gap with `llm-torch-profiler-analysis` and `llm-pipeline-analysis`.
-4. Patch only the code paths the evidence supports.
-5. Re-run the same workload, then repeat from step 3 until SGLang catches up or the goal's stop conditions are met.
+```text
+/goal Keep optimizing SGLang serving for Nemotron-3-Nano-30B-A3B-FP8 on one H200
+until it matches or beats the best reproducible vLLM and TensorRT-LLM results under
+the same GPU budget, precision, workload, and SLA. Prove it with benchmarks, profiles,
+a final report, and GSM8K/MMLU accuracy tables.
+
+Rules:
+- Confirm the repos are clean and check open PRs before setting the baseline.
+- Before each measurement, confirm no one else is using the GPU.
+- Use one GPU only, and don't choose a patch until the fair benchmark is done.
+- If SGLang is more than 1% behind, profile first, using
+  llm-torch-profiler-analysis and llm-pipeline-analysis.
+- Patch only paths the evidence supports, then re-run the same workload.
+- Update the manifest every round: evidence, failed attempts, next step.
+- Clean up only what this task started or downloaded.
+- Stop and report if GPUs stay unavailable, the evidence can't be trusted, the
+  budget runs out, or no defensible next patch exists.
+```
+
+**How a run might use these tools.** This is my own illustration, not a recorded run:
+
+1. `llm-serving-auto-benchmark` finds the best command for each framework and shows SGLang is behind.
+2. `llm-torch-profiler-analysis` and `llm-pipeline-analysis` trace the gap to the stage, layer, and kernel responsible.
+3. If the cause is a config or routing problem, the agent fixes it in SGLang, using in-repo skills such as `write-sglang-test` to add coverage.
+4. If the cause is one hot kernel, it can become a KDA-Pilot task. The agent optimizes the kernel in isolation, then the change is integrated back into SGLang.
+5. The agent re-runs the same benchmark and accuracy checks, then decides what to try next.
+
+[Kernel Design Agents](https://github.com/NVlabs/kda) (KDA) is an agent workflow for writing high-performance CUDA kernels, and it won the MLSys 2026 FlashInfer Kernel Contest. [KDA-Pilot](https://github.com/BBuf/KDA-Pilot) applies it to real SGLang kernels, with frozen shapes, matching interfaces for the old and new versions, and correctness gates. The prompts don't name KDA-Pilot, so step 4 is one way to connect them.
 
 You set the goal and review the result. Inside the goal, the agent decides each next step.
 
@@ -176,7 +199,7 @@ report why, or stop after 20 turns.
 
 **Framework skills and collaboration processes**
 - vLLM, [`.agents/skills`](https://github.com/vllm-project/vllm/tree/main/.agents/skills)
-- SGLang, [`.agents/skills`](https://github.com/sgl-project/sglang/tree/main/.agents/skills)
+- SGLang, [`.agents/skills`](https://github.com/sgl-project/sglang/tree/main/.agents/skills): [`generate-profile`](https://github.com/sgl-project/sglang/blob/main/.agents/skills/generate-profile/SKILL.md), [`llm-torch-profiler-analysis`](https://github.com/sgl-project/sglang/blob/main/.agents/skills/llm-torch-profiler-analysis/SKILL.md), [`debug-cuda-crash`](https://github.com/sgl-project/sglang/blob/main/.agents/skills/debug-cuda-crash/SKILL.md)
 - LMSYS, [Agent-Assisted SGLang Development](https://www.lmsys.org/blog/2026-07-02-agent-assisted-sglang-development/) (2026); [Chinese version](https://zhuanlan.zhihu.com/p/2056522862169678247)
 - NVIDIA, [TensorRT-LLM `.claude/`](https://github.com/NVIDIA/TensorRT-LLM/tree/main/.claude): [`perf-optimization` coordinator](https://github.com/NVIDIA/TensorRT-LLM/blob/main/.claude/skills/perf-optimization/SKILL.md), [performance casebook](https://github.com/NVIDIA/TensorRT-LLM/blob/main/.claude/skills/perf-optimization-casebook/SKILL.md)
 
@@ -194,6 +217,7 @@ report why, or stop after 20 turns.
 - NVIDIA Dynamo, [AIConfigurator](https://github.com/ai-dynamo/aiconfigurator), [AISimulate](https://github.com/ai-dynamo/aisimulate), [paper](https://arxiv.org/abs/2601.06288), [Dynamo 1.0 blog](https://developer.nvidia.com/blog/nvidia-dynamo-1-production-ready/)
 
 **Kernel agents**
+- [Kernel Design Agents](https://github.com/NVlabs/kda)
 - BBuf, [KDA-Pilot](https://github.com/BBuf/KDA-Pilot)
 - Meta PyTorch, [KernelAgent](https://github.com/meta-pytorch/KernelAgent), [blog](https://pytorch.org/blog/kernelagent-hardware-guided-gpu-kernel-optimization-via-multi-agent-orchestration/)
 - [Kernel Forge](https://github.com/TheJoshBrod/KernelForge), [paper](https://arxiv.org/abs/2607.24762)
