@@ -144,11 +144,13 @@ You set the goal and review the result. Inside the goal, the agent decides each 
 
 ### 1.4 Complete workflow: GEAK
 
-You give it a running server, a fixed workload, and a target metric. It runs the whole loop: measure the baseline → profile → decide what to try (configs first, then kernels) → apply one change → re-measure end to end → keep or revert. Code controls the flow, and LLM roles are called only at decision points. This layer answers *"did the service actually get faster?"* rather than *"did a kernel get faster?"*
+You give it a serving backend, model weights, and a target workload, and it works to raise serving throughput. It runs the whole loop: measure the baseline → profile → rank bottlenecks by `GPU-time share × achievable speedup` → try the cheapest options first (configs, then kernels) → apply one change → re-measure end to end → keep or revert. An isolated kernel speedup is only a hypothesis, and the end-to-end A/B result is the verdict. This layer answers *"did the service actually get faster?"* rather than *"did a kernel get faster?"*
 
-[AMD GEAK](https://github.com/AMD-AGI/GEAK) (`e2e_workflow`) runs on AMD Instinct/Radeon + ROCm 6+ and supports vLLM, SGLang, and ATOM. Further reading: [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html), [original GEAK paper (2025, Triton kernel agent)](https://arxiv.org/abs/2507.23194), and its companion [Magpie skill](https://github.com/AMD-AGI/Magpie/blob/main/skills/magpie/SKILL.md) (benchmarking and analysis on AMD, with a 9-step loop and explicit "don't claim success unless..." rules).
+[AMD GEAK v4](https://www.amd.com/en/developer/resources/technical-articles/2026/geak-v4.html) ([Chinese](https://zhuanlan.zhihu.com/p/2076730119767450356), [repo](https://github.com/AMD-AGI/GEAK)) runs on AMD Instinct/Radeon + ROCm 6+ and supports vLLM, SGLang, and ATOM. Further reading: [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html) and its companion [Magpie skill](https://github.com/AMD-AGI/Magpie/blob/main/skills/magpie/SKILL.md) (benchmarking and analysis on AMD, with a 9-step loop and explicit "don't claim success unless..." rules).
 
-GEAK runs inside Claude Code, but **Claude doesn't drive it. A deterministic JavaScript workflow does.** Stage order, budgets, stop conditions, and gates are all code. LLM roles step in for judgment calls: which kernel to attack, how to rewrite it, whether a route is worth it. This is the main difference from TensorRT-LLM, whose process still relies on an LLM following written instructions rather than being enforced by code.
+GEAK runs inside Claude Code, but **Claude doesn't drive it. A deterministic JavaScript workflow does.** Stage order, budgets, stop conditions, and gates are all code. LLM roles step in for judgment calls: which kernel to attack, how to rewrite it, whether a route is worth it. GEAK has specialist roles too, so the main difference from TensorRT-LLM is enforcement: TensorRT-LLM's process still relies on an LLM following written instructions, while GEAK's is enforced by code.
+
+It works at two levels. `e2e_workflow` handles the server, profiling, and end-to-end checks, and it calls `kernel_workflow` when a kernel is worth rewriting. A separate Verify Engineer then re-measures each claimed speedup in a clean workspace, so no agent's self-reported result counts. Skills and past lessons can suggest candidates, but they can't replace measurement.
 
 Every change must pass three gates, which are worth copying even if you never use GEAK:
 
@@ -160,6 +162,8 @@ Every change must pass three gates, which are worth copying even if you never us
 ```text
 use path_to_GEAK/e2e_workflow to optimize inference for /models/Qwen3.5-27B-FP8, sglang, ISL/OSL=1024, conc=64, gpus 0,1,2,3
 ```
+
+AMD reports throughput gains of +60% on Qwen3.5-27B-FP8, +96% on Qwen3-14B-FP8, and +42.2% on MiniMax-M3-MXFP8, on MI300X-class systems. It describes these as workload-specific, not guarantees.
 
 ---
 
@@ -186,7 +190,7 @@ Iteration is the part that's easiest to leave vague, so here is an example for i
 | The gain doesn't beat the noise | Roll back and try the next-ranked option |
 | Throughput improves, but a constraint is violated | Roll back and record why it failed |
 | The new path didn't actually run | Check for a fallback, and don't count this result as valid data |
-| Three rounds in a row bring no real gain | Switch routes, for example from the kernel to host overhead |
+| Three rounds in a row bring no real gain | Switch routes. For example, if the hot attention kernel got faster but overall throughput didn't improve, it may not be the real bottleneck, so check other bottlenecks |
 | Every route is exhausted, with no new evidence | Trigger the stop condition and report |
 
 The wording matters too:
@@ -211,7 +215,8 @@ BBuf's [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/m
 - BBuf, [PR #98: removal of the SOTA loop skills](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/pull/98) (2026); Codex Goal prompts for [B200](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-b200-codex-goal-prompts.md) and [H200](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md)
 
 **End-to-end workflows**
-- AMD, [GEAK](https://github.com/AMD-AGI/GEAK): [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html), [original paper](https://arxiv.org/abs/2507.23194) (2025)
+- AMD, [GEAK v4: From Faster Kernels to Faster Workloads](https://www.amd.com/en/developer/resources/technical-articles/2026/geak-v4.html) (2026); [Chinese version](https://zhuanlan.zhihu.com/p/2076730119767450356)
+- AMD, [GEAK](https://github.com/AMD-AGI/GEAK): [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html)
 - AMD, [Magpie skill](https://github.com/AMD-AGI/Magpie/blob/main/skills/magpie/SKILL.md)
 
 **Config tuning**
