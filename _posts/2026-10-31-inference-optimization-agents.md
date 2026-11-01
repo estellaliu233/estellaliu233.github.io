@@ -6,9 +6,6 @@ tags: [ml-systems, serving, agents, optimization, geak, vllm, sglang, tensorrt-l
 description: A beginner's map of inference optimization tooling, from framework skills to complete workflows like AMD's GEAK, with where to start in each layer.
 ---
 
-> This is a reading-based survey. I haven't run these tools yet: the descriptions come from their docs, READMEs, and skill files, and the starting points I suggest are untested. Items marked **[abstract only]** are ones I've only read the abstract or summary of.
-{: .prompt-info }
-
 ## Why I wrote this
 
 When I started reading about inference optimization agents, I couldn't tell these tools apart. "Agent" could mean a markdown file that teaches Claude to write a kernel, or a program that runs a whole optimization loop. There are also a lot of skills and agents out there, and I didn't know where to start. So I wrote this short summary, which introduces some of the best-known tools in four layers.
