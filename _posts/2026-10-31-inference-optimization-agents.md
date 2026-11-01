@@ -107,7 +107,7 @@ Other write-ups: [intro (Zhihu)](https://zhuanlan.zhihu.com/p/202521617746337006
 
 The LMSYS post also describes the SOTA loop, where SOTA means the best reproducible result under fixed conditions. It compares frameworks, explains the gap, patches SGLang, and re-tests. BBuf used to ship it as the `sglang-sota-humanize-loop` skill, but [PR #98](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/pull/98) removed it in October 2026. I read this as the opposite of AMD's direction: BBuf moved the process from a skill into a prompt, while GEAK moved it into code.
 
-**How to run it end to end.** Write the whole process into one persistent `/goal`. Here is a shortened version of the [Nemotron-3-Nano prompt](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md#L42-L71), in my own words. The original has more than 20 rules and is tuned to the author's machines:
+**How to run it end to end.** Write the whole process into one persistent `/goal`. Here is a shortened version of the [Nemotron-3-Nano prompt](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md#L42-L71), in my own words. The original has more than 20 rules:
 
 ```text
 /goal Keep optimizing SGLang serving for Nemotron-3-Nano-30B-A3B-FP8 on one H200
@@ -136,7 +136,7 @@ Rules:
 4. If the cause is one hot kernel, it can become a KDA-Pilot task. The agent optimizes the kernel in isolation, then the change is integrated back into SGLang.
 5. The agent re-runs the same benchmark and accuracy checks, then decides what to try next.
 
-[Kernel Design Agents](https://github.com/NVlabs/kda) (KDA) is an agent workflow for writing high-performance CUDA kernels, and it won the MLSys 2026 FlashInfer Kernel Contest. [KDA-Pilot](https://github.com/BBuf/KDA-Pilot) applies it to real SGLang kernels, with frozen shapes, matching interfaces for the old and new versions, and correctness gates. BBuf's prompts name neither KDA-Pilot nor SGLang's in-repo skills. Steps 3 and 4 are my suggestion: if you want the agent to use them, name them in your goal.
+[Kernel Design Agents](https://github.com/NVlabs/kda) (KDA) is an agent workflow for writing high-performance CUDA kernels, and it won the MLSys 2026 FlashInfer Kernel Contest. [KDA-Pilot](https://github.com/BBuf/KDA-Pilot) applies it to real SGLang kernels, with frozen shapes, matching interfaces for the old and new versions, and correctness gates. Steps 3 and 4 are my suggestion: if you want the agent to use them, name them in your goal.
 
 You set the goal and review the result. Inside the goal, the agent decides each next step.
 
@@ -202,7 +202,7 @@ The wording matters too:
 
 I'd start read-only: baseline, profile, and report, with no code changes. For Claude Code, note that the evaluator judges only what appears in the conversation and doesn't run commands itself, so ask the agent to print the evidence.
 
-BBuf's [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md) are a full example, but they carry 20-plus rules tuned to the author's machines. Don't try to write that many up front. Start with a handful. When a run goes wrong, prefer a script or test that catches the mistake, and add a rule only if the mistake keeps coming back.
+BBuf's [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md) are a full example, but they carry 20-plus rules. Don't try to write that many up front. Start with a handful. When a run goes wrong, prefer a script or test that catches the mistake, and add a rule only if the mistake keeps coming back.
 
 ## References
 
