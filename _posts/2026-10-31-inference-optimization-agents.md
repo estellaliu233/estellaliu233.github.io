@@ -202,7 +202,7 @@ The wording matters too:
 
 I'd start read-only: baseline, profile, and report, with no code changes. For Claude Code, note that the evaluator judges only what appears in the conversation and doesn't run commands itself, so ask the agent to print the evidence.
 
-BBuf's [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md) are a full example, but they carry 20-plus rules. Don't try to write that many up front. Start with a handful. When a run goes wrong, prefer a script or test that catches the mistake, and add a rule only if the mistake keeps coming back.
+BBuf's [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md) are a full example. When a run goes wrong, prefer a script or test that catches the mistake, and add a rule only if the mistake keeps coming back.
 
 ## References
 
