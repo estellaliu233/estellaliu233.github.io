@@ -27,7 +27,7 @@ I group the serving-focused tools into four layers, from the narrowest scope to 
 
 ### 1.1 Skills inside a framework: vLLM and SGLang
 
-**What it does.** These skills ship with the framework's own repo ([vLLM skills](https://github.com/vllm-project/vllm/tree/main/.agents/skills), [SGLang skills](https://github.com/sgl-project/sglang/tree/main/.agents/skills)) and encode how that project's developers work: how to write a kernel, debug a crash, benchmark a change, or prepare a PR. They help a developer do one task correctly. They don't run an optimization loop.
+These skills ship with the framework's own repo ([vLLM skills](https://github.com/vllm-project/vllm/tree/main/.agents/skills), [SGLang skills](https://github.com/sgl-project/sglang/tree/main/.agents/skills)) and encode how that project's developers work: how to write a kernel, debug a crash, benchmark a change, or prepare a PR. They help a developer do one task correctly. They don't run an optimization loop.
 
 | Framework | Skills that matter for performance work | Others | Links |
 |---|---|---|---|
@@ -90,7 +90,7 @@ The coordinator covers two modes:
 
 ### 1.3 Cross-framework tools: BBuf
 
-**What it does.** [BBuf AI-Infra-Auto-Driven-SKILLS](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS) isn't tied to one framework. It runs the same model and workload across frameworks, compares them, and helps explain why one is behind. It covers SGLang, vLLM, TensorRT-LLM, and TokenSpeed.
+[BBuf AI-Infra-Auto-Driven-SKILLS](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS) isn't tied to one framework. It runs the same model and workload across frameworks, compares them, and helps explain why one is behind. It covers SGLang, vLLM, TensorRT-LLM, and TokenSpeed.
 
 | Skill or resource | What it does |
 |---|---|
@@ -136,7 +136,7 @@ Rules:
 4. If the cause is one hot kernel, it can become a KDA-Pilot task. The agent optimizes the kernel in isolation, then the change is integrated back into SGLang.
 5. The agent re-runs the same benchmark and accuracy checks, then decides what to try next.
 
-[Kernel Design Agents](https://github.com/NVlabs/kda) (KDA) is an agent workflow for writing high-performance CUDA kernels, and it won the MLSys 2026 FlashInfer Kernel Contest. [KDA-Pilot](https://github.com/BBuf/KDA-Pilot) applies it to real SGLang kernels, with frozen shapes, matching interfaces for the old and new versions, and correctness gates. The prompts don't name KDA-Pilot, so step 4 is one way to connect them.
+[Kernel Design Agents](https://github.com/NVlabs/kda) (KDA) is an agent workflow for writing high-performance CUDA kernels, and it won the MLSys 2026 FlashInfer Kernel Contest. [KDA-Pilot](https://github.com/BBuf/KDA-Pilot) applies it to real SGLang kernels, with frozen shapes, matching interfaces for the old and new versions, and correctness gates. BBuf's prompts don't mention KDA-Pilot. Step 4 is my suggestion: if you want the agent to use it, name it in your goal.
 
 You set the goal and review the result. Inside the goal, the agent decides each next step.
 
@@ -144,7 +144,7 @@ You set the goal and review the result. Inside the goal, the agent decides each 
 
 ### 1.4 Complete workflow: GEAK
 
-**What it does.** You give it a running server, a fixed workload, and a target metric. It runs the whole loop: measure the baseline → profile → decide what to try (configs first, then kernels) → apply one change → re-measure end to end → keep or revert. Code controls the flow, and LLM roles are called only at decision points. This layer answers *"did the service actually get faster?"* rather than *"did a kernel get faster?"*
+You give it a running server, a fixed workload, and a target metric. It runs the whole loop: measure the baseline → profile → decide what to try (configs first, then kernels) → apply one change → re-measure end to end → keep or revert. Code controls the flow, and LLM roles are called only at decision points. This layer answers *"did the service actually get faster?"* rather than *"did a kernel get faster?"*
 
 [AMD GEAK](https://github.com/AMD-AGI/GEAK) (`e2e_workflow`) runs on AMD Instinct/Radeon + ROCm 6+ and supports vLLM, SGLang, and ATOM. Further reading: [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html), [original GEAK paper (2025, Triton kernel agent)](https://arxiv.org/abs/2507.23194), and its companion [Magpie skill](https://github.com/AMD-AGI/Magpie/blob/main/skills/magpie/SKILL.md) (benchmarking and analysis on AMD, with a 9-step loop and explicit "don't claim success unless..." rules).
 
@@ -161,12 +161,11 @@ Every change must pass three gates, which are worth copying even if you never us
 use path_to_GEAK/e2e_workflow to optimize inference for /models/Qwen3.5-27B-FP8, sglang, ISL/OSL=1024, conc=64, gpus 0,1,2,3
 ```
 
-[LLM4LLM](https://arxiv.org/abs/2608.21836) **[abstract only]**, no code found, is a similar idea on NVIDIA: it splits an inference script into prefill/decode optimization tasks and accepts a patch only after verifying it inside the model.
 ---
 
 ## 2. Letting an agent run for longer
 
-Once a single task works, you can let the agent keep going. Both [Codex](https://github.com/openai/openai-cookbook/blob/main/examples/codex/using_goals_in_codex.ipynb) and [Claude Code](https://code.claude.com/docs/en/goal) have a `/goal` command: the agent keeps working until a completion condition is met or it can't continue. It suits work where the end state is checkable but the next step depends on the last result, such as benchmark-driven tuning.
+Once a single task works, you can let the agent keep going. BBuf's post mentions [Codex Goal](https://github.com/openai/openai-cookbook/blob/main/examples/codex/using_goals_in_codex.ipynb), and [Claude Code](https://code.claude.com/docs/en/goal) has a similar `/goal` command: the agent keeps working until a completion condition is met or it can't continue. It suits work where the end state is checkable but the next step depends on the last result, such as benchmark-driven tuning.
 
 OpenAI's guide says a strong goal defines six things:
 
@@ -179,17 +178,25 @@ OpenAI's guide says a strong goal defines six things:
 | **Iteration** | How does it pick the next step? | Change one variable, keep it only if the gain beats the noise |
 | **Stop conditions** | When should it stop and report? | The GPU is busy, the trace is empty, the budget is gone |
 
-I'd start read-only: baseline, profile, and report, with no code changes. For Claude Code, note that the evaluator judges only what appears in the conversation and doesn't run commands itself, so ask the agent to print the evidence:
+Iteration is the part that's easiest to leave vague, so here is an example for improving throughput:
 
-```text
-/goal Follow ./plan.md for a read-only analysis. Done when the artifact directory
-has a baseline, noise band, prefill/decode hotspot table, and final_report.md, and
-the output of `python gate_readonly.py` shows PASS in this conversation. Do not edit
-source code. If the GPU is unavailable or the evidence is untrustworthy, stop and
-report why, or stop after 20 turns.
-```
+| Result of this round | Next step |
+|---|---|
+| The gain beats the noise, and all constraints hold | Keep the change and re-profile, because the hotspot may have moved |
+| The gain doesn't beat the noise | Roll back and try the next-ranked option |
+| Throughput improves, but a constraint is violated | Roll back and record why it failed |
+| The new path didn't actually run | Check for a fallback, and don't count this result as valid data |
+| Three rounds in a row bring no real gain | Switch routes, for example from the kernel to host overhead |
+| Every route is exhausted, with no new evidence | Trigger the stop condition and report |
 
-`plan.md` and `gate_readonly.py` are files you'd write yourself. BBuf's [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md) are a full example, but they carry 20-plus rules tuned to the author's machines. Don't try to write that many up front: start with a handful, and add one each time a run goes wrong.
+The wording matters too:
+
+- **Too vague:** Keep optimizing until performance improves.
+- **Better:** Change one variable per round, and keep a change only if the re-test gain beats the noise. Try the path with the highest expected gain from the profile first. After three failed rounds on one route, switch routes. Write each round's results to the manifest.
+
+I'd start read-only: baseline, profile, and report, with no code changes. For Claude Code, note that the evaluator judges only what appears in the conversation and doesn't run commands itself, so ask the agent to print the evidence.
+
+BBuf's [H200 prompts](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS/blob/main/prompts/sglang-sota-h200-codex-goal-prompts.md) are a full example, but they carry 20-plus rules tuned to the author's machines. Don't try to write that many up front. Start with a handful. When a run goes wrong, prefer a script or test that catches the mistake, and add a rule only if the mistake keeps coming back.
 
 ## References
 
@@ -206,7 +213,6 @@ report why, or stop after 20 turns.
 **End-to-end workflows**
 - AMD, [GEAK](https://github.com/AMD-AGI/GEAK): [pipeline docs](https://rocm.docs.amd.com/projects/geak/en/latest/conceptual/geak-pipeline.html), [original paper](https://arxiv.org/abs/2507.23194) (2025)
 - AMD, [Magpie skill](https://github.com/AMD-AGI/Magpie/blob/main/skills/magpie/SKILL.md)
-- [LLM4LLM](https://arxiv.org/abs/2608.21836) **[abstract only]**
 
 **Config tuning**
 - [vllm-autotune](https://github.com/SummerTea/vllm-autotune)
