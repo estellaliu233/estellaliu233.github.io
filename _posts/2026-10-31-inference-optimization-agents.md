@@ -63,7 +63,25 @@ Use these examples and this checklist when you use or modify a skill. The LMSYS 
 
 ### 1.2 Collaboration process: TensorRT-LLM
 
-**What it does.** TRT-LLM ships about 30 skills and 11 sub-agents in its [`.claude/`](https://github.com/NVIDIA/TensorRT-LLM/tree/main/.claude) directory and organizes them into a process. A [`perf-optimization` coordinator](https://github.com/NVIDIA/TensorRT-LLM/blob/main/.claude/skills/perf-optimization/SKILL.md) plans and delegates but is told *not to write code*. Specialists (profiling, CUDA graph, Triton, CuTe, CUDA, TileIR) do the work. Before trying anything, it checks a [**casebook**](https://github.com/NVIDIA/TensorRT-LLM/blob/main/.claude/skills/perf-optimization-casebook/SKILL.md) of past wins, each written as a precedent: when it applies, the mechanism, the expected gain, the accuracy risk, how to verify it, and how to roll it back. There is a user-specified mode and an **autopilot** mode. It runs on NVIDIA and serves **TensorRT-LLM only**.
+I haven't used TensorRT-LLM myself, so this section comes from reading its repo. Even so, the difference from vLLM and SGLang is clear: TensorRT-LLM is more automated. **vLLM and SGLang provide tools. TensorRT-LLM also provides a process for organizing agents around those tools.** Its [`.claude/`](https://github.com/NVIDIA/TensorRT-LLM/tree/main/.claude) directory ships 32 skills and 11 sub-agents, and four parts make up the process:
+
+| Part | Role |
+|---|---|
+| **[Coordinator](https://github.com/NVIDIA/TensorRT-LLM/blob/main/.claude/skills/perf-optimization/SKILL.md)** | Sets the direction, assigns work, reads the results, and decides the next round, but doesn't write code |
+| **Specialists** | Handle specific work such as profiling, CUDA graphs, and Triton |
+| **[Casebook](https://github.com/NVIDIA/TensorRT-LLM/blob/main/.claude/skills/perf-optimization-casebook/SKILL.md)** | Records how similar problems were solved, and gets checked before any change |
+| **Loop** | Change → profile → analyze → change again |
+
+There is a user-specified mode and an **autopilot** mode. It runs on NVIDIA and serves **TensorRT-LLM only**.
+
+**Compared with vLLM and SGLang,** this is how I read the trade-offs. I haven't tested them.
+
+| | Details |
+|---|---|
+| **Advantages** | You make fewer step-by-step decisions. Roles are clear, so the agent that sets the direction isn't also writing the code. Past wins are collected in one place and checked first. |
+| **Disadvantages** | It only serves TensorRT-LLM. There are more parts to understand and more agents to run, which likely costs more tokens. If you only need one task, such as a benchmark, a single skill is simpler. |
+
+The process is also still driven by an LLM following written instructions. Unlike GEAK, code doesn't enforce it.
 
 **How to try it:** clone the repo and start Claude Code inside it. Skills and agents are discovered automatically; type `/skills` and `/agents` to check what loaded. Then either ask in plain language ("optimize this workload to TPOT < X ms") or invoke a skill directly, for example `/perf-analysis`.
 
